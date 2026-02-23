@@ -12,7 +12,7 @@
 ## Medium Priority
 - [x] Add unit tests for each module (5 tests implemented)
 - [x] Implement proper class loading from classpath
-- [ ] Add support for exceptions and exception handling
+- [x] Add support for exceptions and exception handling (basic implementation with division by zero and array bounds exceptions)
 - [ ] Implement native method interface
 - [ ] Add support for synchronization (monitors)
 - [ ] Implement reflection API basics

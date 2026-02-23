@@ -71,13 +71,25 @@ pub enum ParseError {
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParseError::InvalidMagic(magic) => write!(f, "Invalid magic number: 0x{:08X} (expected 0xCAFEBABE)", magic),
-            ParseError::UnsupportedVersion(major, minor) => write!(f, "Unsupported class file version: {}.{}", major, minor),
-            ParseError::InvalidConstantPoolTag(tag) => write!(f, "Invalid constant pool tag: {}", tag),
+            ParseError::InvalidMagic(magic) => write!(
+                f,
+                "Invalid magic number: 0x{:08X} (expected 0xCAFEBABE)",
+                magic
+            ),
+            ParseError::UnsupportedVersion(major, minor) => {
+                write!(f, "Unsupported class file version: {}.{}", major, minor)
+            }
+            ParseError::InvalidConstantPoolTag(tag) => {
+                write!(f, "Invalid constant pool tag: {}", tag)
+            }
             ParseError::InvalidAttributeLength => write!(f, "Invalid attribute length"),
             ParseError::InvalidUtf8String => write!(f, "Invalid UTF-8 string in constant pool"),
-            ParseError::InvalidMethodDescriptor(desc) => write!(f, "Invalid method descriptor: {}", desc),
-            ParseError::InvalidFieldDescriptor(desc) => write!(f, "Invalid field descriptor: {}", desc),
+            ParseError::InvalidMethodDescriptor(desc) => {
+                write!(f, "Invalid method descriptor: {}", desc)
+            }
+            ParseError::InvalidFieldDescriptor(desc) => {
+                write!(f, "Invalid field descriptor: {}", desc)
+            }
             ParseError::InvalidOpcode(opcode) => write!(f, "Invalid opcode: 0x{:02X}", opcode),
             ParseError::InvalidBytecode(msg) => write!(f, "Invalid bytecode: {}", msg),
             ParseError::IoError(e) => write!(f, "IO error: {}", e),
@@ -92,7 +104,7 @@ impl From<std::io::Error> for ParseError {
 }
 
 /// Runtime execution errors
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RuntimeError {
     /// Stack underflow (pop from empty stack)
     StackUnderflow,
@@ -157,14 +169,26 @@ impl fmt::Display for RuntimeError {
         match self {
             RuntimeError::StackUnderflow => write!(f, "Stack underflow"),
             RuntimeError::StackOverflow => write!(f, "Stack overflow"),
-            RuntimeError::LocalVariableOutOfBounds(index) => write!(f, "Local variable index {} out of bounds", index),
-            RuntimeError::ArrayIndexOutOfBounds(index, length) => write!(f, "Array index {} out of bounds (length: {})", index, length),
+            RuntimeError::LocalVariableOutOfBounds(index) => {
+                write!(f, "Local variable index {} out of bounds", index)
+            }
+            RuntimeError::ArrayIndexOutOfBounds(index, length) => write!(
+                f,
+                "Array index {} out of bounds (length: {})",
+                index, length
+            ),
             RuntimeError::NullPointerException => write!(f, "Null pointer exception"),
             RuntimeError::DivisionByZero => write!(f, "Division by zero"),
             RuntimeError::ClassNotFound(name) => write!(f, "Class not found: {}", name),
-            RuntimeError::MethodNotFound(class, method) => write!(f, "Method {} not found in class {}", method, class),
-            RuntimeError::FieldNotFound(class, field) => write!(f, "Field {} not found in class {}", field, class),
-            RuntimeError::InvalidTypeConversion(from, to) => write!(f, "Invalid type conversion from {} to {}", from, to),
+            RuntimeError::MethodNotFound(class, method) => {
+                write!(f, "Method {} not found in class {}", method, class)
+            }
+            RuntimeError::FieldNotFound(class, field) => {
+                write!(f, "Field {} not found in class {}", field, class)
+            }
+            RuntimeError::InvalidTypeConversion(from, to) => {
+                write!(f, "Invalid type conversion from {} to {}", from, to)
+            }
             RuntimeError::UnsupportedOperation(op) => write!(f, "Unsupported operation: {}", op),
             RuntimeError::ArithmeticOverflow => write!(f, "Arithmetic overflow"),
             RuntimeError::InvalidReference(addr) => write!(f, "Invalid object reference: {}", addr),
@@ -177,12 +201,26 @@ impl fmt::Display for RuntimeError {
             RuntimeError::Unimplemented(feature) => write!(f, "Unimplemented feature: {}", feature),
             RuntimeError::InvalidOpcode(opcode) => write!(f, "Invalid opcode: 0x{:02X}", opcode),
             RuntimeError::ExceptionThrown(msg) => write!(f, "Exception thrown: {}", msg),
-            RuntimeError::ClassCastException(from, to) => write!(f, "Class cast exception: cannot cast from {} to {}", from, to),
+            RuntimeError::ClassCastException(from, to) => write!(
+                f,
+                "Class cast exception: cannot cast from {} to {}",
+                from, to
+            ),
             RuntimeError::ArrayStoreException => write!(f, "Array store exception"),
-            RuntimeError::NegativeArraySizeException(size) => write!(f, "Negative array size exception: {}", size),
-            RuntimeError::IllegalAccessException(msg) => write!(f, "Illegal access exception: {}", msg),
-            RuntimeError::InstantiationException(msg) => write!(f, "Instantiation exception: {}", msg),
-            RuntimeError::StringIndexOutOfBounds(index, length) => write!(f, "String index {} out of bounds (length: {})", index, length),
+            RuntimeError::NegativeArraySizeException(size) => {
+                write!(f, "Negative array size exception: {}", size)
+            }
+            RuntimeError::IllegalAccessException(msg) => {
+                write!(f, "Illegal access exception: {}", msg)
+            }
+            RuntimeError::InstantiationException(msg) => {
+                write!(f, "Instantiation exception: {}", msg)
+            }
+            RuntimeError::StringIndexOutOfBounds(index, length) => write!(
+                f,
+                "String index {} out of bounds (length: {})",
+                index, length
+            ),
         }
     }
 }
@@ -223,14 +261,22 @@ impl fmt::Display for MemoryError {
             MemoryError::InvalidHeapAddress(addr) => write!(f, "Invalid heap address: {}", addr),
             MemoryError::HeapCorruption => write!(f, "Heap corruption detected"),
             MemoryError::GcError(msg) => write!(f, "Garbage collection error: {}", msg),
-            MemoryError::MemoryLimitExceeded(limit) => write!(f, "Memory limit exceeded: {} bytes", limit),
+            MemoryError::MemoryLimitExceeded(limit) => {
+                write!(f, "Memory limit exceeded: {} bytes", limit)
+            }
             MemoryError::InvalidObjectHeader => write!(f, "Invalid object header"),
             MemoryError::InvalidArrayHeader => write!(f, "Invalid array header"),
             MemoryError::AllocationFailed(msg) => write!(f, "Memory allocation failed: {}", msg),
             MemoryError::InvalidArrayLength(len) => write!(f, "Invalid array length: {}", len),
             MemoryError::InvalidArrayType(ty) => write!(f, "Invalid array type: {}", ty),
-            MemoryError::ArrayIndexOutOfBounds(index, length) => write!(f, "Array index {} out of bounds (length: {})", index, length),
-            MemoryError::InvalidArrayOperation(msg) => write!(f, "Invalid array operation: {}", msg),
+            MemoryError::ArrayIndexOutOfBounds(index, length) => write!(
+                f,
+                "Array index {} out of bounds (length: {})",
+                index, length
+            ),
+            MemoryError::InvalidArrayOperation(msg) => {
+                write!(f, "Invalid array operation: {}", msg)
+            }
         }
     }
 }
@@ -263,16 +309,32 @@ pub enum ClassLoadingError {
 impl fmt::Display for ClassLoadingError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ClassLoadingError::ClassFileNotFound(name) => write!(f, "Class file not found: {}", name),
+            ClassLoadingError::ClassFileNotFound(name) => {
+                write!(f, "Class file not found: {}", name)
+            }
             ClassLoadingError::ClassFormatError(msg) => write!(f, "Class format error: {}", msg),
-            ClassLoadingError::ClassCircularityError(name) => write!(f, "Class circularity error: {}", name),
-            ClassLoadingError::NoClassDefFound(name) => write!(f, "No class definition found: {}", name),
-            ClassLoadingError::UnsupportedClassVersion(name, major, minor) => write!(f, "Unsupported class version for {}: {}.{}", name, major, minor),
-            ClassLoadingError::VerificationFailed(msg) => write!(f, "Class verification failed: {}", msg),
+            ClassLoadingError::ClassCircularityError(name) => {
+                write!(f, "Class circularity error: {}", name)
+            }
+            ClassLoadingError::NoClassDefFound(name) => {
+                write!(f, "No class definition found: {}", name)
+            }
+            ClassLoadingError::UnsupportedClassVersion(name, major, minor) => write!(
+                f,
+                "Unsupported class version for {}: {}.{}",
+                name, major, minor
+            ),
+            ClassLoadingError::VerificationFailed(msg) => {
+                write!(f, "Class verification failed: {}", msg)
+            }
             ClassLoadingError::LinkageError(msg) => write!(f, "Linkage error: {}", msg),
-            ClassLoadingError::IllegalAccessError(msg) => write!(f, "Illegal access error: {}", msg),
+            ClassLoadingError::IllegalAccessError(msg) => {
+                write!(f, "Illegal access error: {}", msg)
+            }
             ClassLoadingError::InstantiationError(msg) => write!(f, "Instantiation error: {}", msg),
-            ClassLoadingError::ClassLoaderConstraintViolation(msg) => write!(f, "Class loader constraint violation: {}", msg),
+            ClassLoadingError::ClassLoaderConstraintViolation(msg) => {
+                write!(f, "Class loader constraint violation: {}", msg)
+            }
         }
     }
 }
@@ -297,12 +359,22 @@ pub enum NativeError {
 impl fmt::Display for NativeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NativeError::NativeMethodNotFound(class, method) => write!(f, "Native method {}.{} not found", class, method),
-            NativeError::NativeMethodFailed(class, method) => write!(f, "Native method {}.{} failed", class, method),
-            NativeError::NativeLibraryNotFound(lib) => write!(f, "Native library not found: {}", lib),
-            NativeError::NativeLibraryLoadFailed(lib) => write!(f, "Native library load failed: {}", lib),
+            NativeError::NativeMethodNotFound(class, method) => {
+                write!(f, "Native method {}.{} not found", class, method)
+            }
+            NativeError::NativeMethodFailed(class, method) => {
+                write!(f, "Native method {}.{} failed", class, method)
+            }
+            NativeError::NativeLibraryNotFound(lib) => {
+                write!(f, "Native library not found: {}", lib)
+            }
+            NativeError::NativeLibraryLoadFailed(lib) => {
+                write!(f, "Native library load failed: {}", lib)
+            }
             NativeError::UnsatisfiedLinkError(msg) => write!(f, "Unsatisfied link error: {}", msg),
-            NativeError::NativeMethodSignatureMismatch(msg) => write!(f, "Native method signature mismatch: {}", msg),
+            NativeError::NativeMethodSignatureMismatch(msg) => {
+                write!(f, "Native method signature mismatch: {}", msg)
+            }
         }
     }
 }

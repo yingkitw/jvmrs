@@ -1,14 +1,12 @@
-use crate::class_file::{ClassFile, MethodInfo, AttributeInfo};
+use crate::class_file::{AttributeInfo, ClassFile, MethodInfo};
 use crate::class_loader::ClassLoader;
-use crate::memory::{Memory, StackFrame, Value, HeapArray};
-use crate::error::{JvmError, RuntimeError, ClassLoadingError, to_runtime_error_enum};
+use crate::error::{to_runtime_error_enum, ClassLoadingError, JvmError, RuntimeError};
+use crate::memory::{HeapArray, Memory, StackFrame, Value};
 use std::collections::HashMap;
 use std::path::Path;
 
 /// Result type for interpreter operations
 pub type InterpreterResult = Result<(), JvmError>;
-
-
 
 /// JVM Interpreter
 pub struct Interpreter {
@@ -63,9 +61,14 @@ impl Interpreter {
     /// Load a class from a file (legacy method, use load_class_by_name for proper classpath resolution)
     pub fn load_class<P: AsRef<Path>>(&mut self, path: P) -> Result<(), JvmError> {
         let class_file = ClassFile::from_file(path).map_err(|e| {
-            JvmError::ClassLoadingError(ClassLoadingError::ClassFileNotFound(format!("Failed to load class: {:?}", e)))
+            JvmError::ClassLoadingError(ClassLoadingError::ClassFileNotFound(format!(
+                "Failed to load class: {:?}",
+                e
+            )))
         })?;
-        let _class_name = class_file.get_class_name().unwrap_or_else(|| "Unknown".to_string());
+        let _class_name = class_file
+            .get_class_name()
+            .unwrap_or_else(|| "Unknown".to_string());
         // For backward compatibility, we still need to add to class loader cache
         // In a real implementation, we'd add it to the class loader
         Ok(())
@@ -84,8 +87,9 @@ impl Interpreter {
 
     /// Throw an exception
     pub fn throw_exception(&mut self, error: RuntimeError) -> InterpreterResult {
-        self.current_exception = Some(error);
-        Err(to_runtime_error_enum(self.current_exception.as_ref().unwrap().clone()))
+        let error_clone = error.clone();
+        self.current_exception = Some(error_clone);
+        Err(to_runtime_error_enum(error))
     }
 
     /// Check if an exception is pending
@@ -104,7 +108,13 @@ impl Interpreter {
     }
 
     /// Add an exception handler
-    pub fn add_exception_handler(&mut self, start_pc: usize, end_pc: usize, handler_pc: usize, catch_type: Option<String>) {
+    pub fn add_exception_handler(
+        &mut self,
+        start_pc: usize,
+        end_pc: usize,
+        handler_pc: usize,
+        catch_type: Option<String>,
+    ) {
         self.exception_handlers.push(ExceptionHandler {
             start_pc,
             end_pc,
@@ -123,7 +133,9 @@ impl Interpreter {
         for handler in &self.exception_handlers {
             if pc >= handler.start_pc && pc < handler.end_pc {
                 match &handler.catch_type {
-                    Some(catch_type) if catch_type == exception_type => return Some(handler.handler_pc),
+                    Some(catch_type) if catch_type == exception_type => {
+                        return Some(handler.handler_pc)
+                    }
                     None => return Some(handler.handler_pc), // catch-all handler
                     _ => continue,
                 }
@@ -137,14 +149,24 @@ impl Interpreter {
         match error {
             RuntimeError::NullPointerException => "java/lang/NullPointerException".to_string(),
             RuntimeError::DivisionByZero => "java/lang/ArithmeticException".to_string(),
-            RuntimeError::ArrayIndexOutOfBounds(_, _) => "java/lang/ArrayIndexOutOfBoundsException".to_string(),
+            RuntimeError::ArrayIndexOutOfBounds(_, _) => {
+                "java/lang/ArrayIndexOutOfBoundsException".to_string()
+            }
             RuntimeError::ClassNotFound(_) => "java/lang/ClassNotFoundException".to_string(),
             RuntimeError::ClassCastException(_, _) => "java/lang/ClassCastException".to_string(),
             RuntimeError::ArrayStoreException => "java/lang/ArrayStoreException".to_string(),
-            RuntimeError::NegativeArraySizeException(_) => "java/lang/NegativeArraySizeException".to_string(),
-            RuntimeError::IllegalAccessException(_) => "java/lang/IllegalAccessException".to_string(),
-            RuntimeError::InstantiationException(_) => "java/lang/InstantiationException".to_string(),
-            RuntimeError::StringIndexOutOfBounds(_, _) => "java/lang/StringIndexOutOfBoundsException".to_string(),
+            RuntimeError::NegativeArraySizeException(_) => {
+                "java/lang/NegativeArraySizeException".to_string()
+            }
+            RuntimeError::IllegalAccessException(_) => {
+                "java/lang/IllegalAccessException".to_string()
+            }
+            RuntimeError::InstantiationException(_) => {
+                "java/lang/InstantiationException".to_string()
+            }
+            RuntimeError::StringIndexOutOfBounds(_, _) => {
+                "java/lang/StringIndexOutOfBoundsException".to_string()
+            }
             RuntimeError::IllegalArgument(_) => "java/lang/IllegalArgumentException".to_string(),
             RuntimeError::IllegalState(_) => "java/lang/IllegalStateException".to_string(),
             _ => "java/lang/RuntimeException".to_string(),
@@ -155,22 +177,31 @@ impl Interpreter {
     pub fn run_main(&mut self, class_name: &str) -> InterpreterResult {
         // Load the class using class loader
         self.class_loader.load_class(class_name)?;
-        
+
         // Get the loaded class
-        let class = self.class_loader.get_class(class_name)
-            .ok_or_else(|| to_runtime_error_enum(RuntimeError::ClassNotFound(class_name.to_string())))?;
+        let class = self.class_loader.get_class(class_name).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::ClassNotFound(class_name.to_string()))
+        })?;
 
         // Find the main method: public static void main(String[])
-        let main_method = class.find_method("main", "([Ljava/lang/String;)V")
-            .ok_or_else(|| to_runtime_error_enum(RuntimeError::MethodNotFound(
-                class_name.to_string(),
-                "main([Ljava/lang/String;)V".to_string()
-            )))?
+        let main_method = class
+            .find_method("main", "([Ljava/lang/String;)V")
+            .ok_or_else(|| {
+                to_runtime_error_enum(RuntimeError::MethodNotFound(
+                    class_name.to_string(),
+                    "main([Ljava/lang/String;)V".to_string(),
+                ))
+            })?
             .clone();
 
         // Find the Code attribute
-        let code_attr = self.find_code_attribute(&class, &main_method)
-            .ok_or_else(|| to_runtime_error_enum(RuntimeError::UnsupportedOperation("Code attribute not found".to_string())))?
+        let code_attr = self
+            .find_code_attribute(&class, &main_method)
+            .ok_or_else(|| {
+                to_runtime_error_enum(RuntimeError::UnsupportedOperation(
+                    "Code attribute not found".to_string(),
+                ))
+            })?
             .clone();
 
         // Create a stack frame for main
@@ -182,7 +213,7 @@ impl Interpreter {
 
         // Parse and execute instructions
         let code = code_attr.info[8..8 + code_length].to_vec();
-        
+
         // Clone the class to avoid borrowing issues
         let class_clone = class.clone();
         self.execute_instructions(&mut frame, &class_clone, &code)?;
@@ -191,7 +222,12 @@ impl Interpreter {
     }
 
     /// Execute bytecode instructions
-    fn execute_instructions(&mut self, frame: &mut StackFrame, class: &ClassFile, code: &[u8]) -> InterpreterResult {
+    fn execute_instructions(
+        &mut self,
+        frame: &mut StackFrame,
+        class: &ClassFile,
+        code: &[u8],
+    ) -> InterpreterResult {
         while frame.pc < code.len() {
             let opcode = code[frame.pc];
             frame.pc += 1;
@@ -199,39 +235,41 @@ impl Interpreter {
             match opcode {
                 // return: return void from method
                 0xb1 => {
-                    break;  // Break out of the loop instead of returning
+                    break; // Break out of the loop instead of returning
                 }
 
                 // ireturn: return int from method
                 0xac => {
-                    break;  // Break out of the loop instead of returning
+                    break; // Break out of the loop instead of returning
                 }
 
                 // freturn: return float from method
                 0xae => {
-                    break;  // Break out of the loop instead of returning
+                    break; // Break out of the loop instead of returning
                 }
 
                 // lreturn: return long from method
                 0xad => {
-                    break;  // Break out of the loop instead of returning
+                    break; // Break out of the loop instead of returning
                 }
 
                 // dreturn: return double from method
                 0xaf => {
-                    break;  // Break out of the loop instead of returning
+                    break; // Break out of the loop instead of returning
                 }
 
                 // areturn: return reference from method
                 0xb0 => {
-                    break;  // Break out of the loop instead of returning
+                    break; // Break out of the loop instead of returning
                 }
 
                 // nop: do nothing
                 0x00 => {}
 
                 // aconst_null: push null onto stack
-                0x01 => { frame.push(Value::Null)?; }
+                0x01 => {
+                    frame.push(Value::Null)?;
+                }
 
                 // iconst_m1 through iconst_5: push int constant -1 to 5
                 0x02..=0x08 => {
@@ -274,7 +312,9 @@ impl Interpreter {
                     let index = self.read_u16(code, frame.pc);
                     frame.pc += 2;
                     if index as usize >= class.constant_pool.len() {
-                        return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(format!("Constant pool index {} out of bounds", index))));
+                        return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                            format!("Constant pool index {} out of bounds", index),
+                        )));
                     }
 
                     let entry = &class.constant_pool[index as usize];
@@ -286,7 +326,9 @@ impl Interpreter {
                             frame.push(Value::Double(*bytes))?;
                         }
                         _ => {
-                            return Err(to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Unsupported constant type for ldc2_w at index {}", index))));
+                            return Err(to_runtime_error_enum(RuntimeError::UnsupportedOperation(
+                                format!("Unsupported constant type for ldc2_w at index {}", index),
+                            )));
                         }
                     }
                 }
@@ -303,7 +345,9 @@ impl Interpreter {
                 0x16 => {
                     let _index = code[frame.pc];
                     frame.pc += 1;
-                    return Err(to_runtime_error_enum(RuntimeError::Unimplemented("lload not implemented".to_string())));
+                    return Err(to_runtime_error_enum(RuntimeError::Unimplemented(
+                        "lload not implemented".to_string(),
+                    )));
                 }
 
                 // fload: load float from local variable at index (unsigned byte)
@@ -318,7 +362,9 @@ impl Interpreter {
                 0x18 => {
                     let _index = code[frame.pc];
                     frame.pc += 1;
-                    return Err(to_runtime_error_enum(RuntimeError::Unimplemented("dload not implemented".to_string())));
+                    return Err(to_runtime_error_enum(RuntimeError::Unimplemented(
+                        "dload not implemented".to_string(),
+                    )));
                 }
 
                 // aload: load reference from local variable at index (unsigned byte)
@@ -338,7 +384,9 @@ impl Interpreter {
 
                 // lload_0 through lload_3 (not implemented)
                 0x1e..=0x21 => {
-                    return Err(to_runtime_error_enum(RuntimeError::Unimplemented("lload_0-3 not implemented".to_string())));
+                    return Err(to_runtime_error_enum(RuntimeError::Unimplemented(
+                        "lload_0-3 not implemented".to_string(),
+                    )));
                 }
 
                 // fload_0 through fload_3: load float from local variable
@@ -350,7 +398,9 @@ impl Interpreter {
 
                 // dload_0 through dload_3 (not implemented)
                 0x26..=0x29 => {
-                    return Err(to_runtime_error_enum(RuntimeError::Unimplemented("dload_0-3 not implemented".to_string())));
+                    return Err(to_runtime_error_enum(RuntimeError::Unimplemented(
+                        "dload_0-3 not implemented".to_string(),
+                    )));
                 }
 
                 // aload_0 through aload_3: load reference from local variable
@@ -508,7 +558,9 @@ impl Interpreter {
 
                 // lstore_0 through lstore_3 (not implemented)
                 0x3f..=0x42 => {
-                    return Err(to_runtime_error_enum(RuntimeError::Unimplemented("lstore_0-3 not implemented".to_string())));
+                    return Err(to_runtime_error_enum(RuntimeError::Unimplemented(
+                        "lstore_0-3 not implemented".to_string(),
+                    )));
                 }
 
                 // fstore_0 through fstore_3: store float into local variable
@@ -520,7 +572,9 @@ impl Interpreter {
 
                 // dstore_0 through dstore_3 (not implemented)
                 0x47..=0x4a => {
-                    return Err(to_runtime_error_enum(RuntimeError::Unimplemented("dstore_0-3 not implemented".to_string())));
+                    return Err(to_runtime_error_enum(RuntimeError::Unimplemented(
+                        "dstore_0-3 not implemented".to_string(),
+                    )));
                 }
 
                 // astore_0 through astore_3: store reference into local variable
@@ -857,58 +911,86 @@ impl Interpreter {
                     let zero = code[frame.pc];
                     frame.pc += 1;
                     if zero != 0 {
-                        return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("invokeinterface fourth byte must be zero".to_string())));
+                        return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                            "invokeinterface fourth byte must be zero".to_string(),
+                        )));
                     }
-                    
+
                     // Get the interface method reference
-                    let cp_entry = class.constant_pool.get(index)
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::IllegalArgument(
-                            format!("Constant pool index {} out of bounds", index)
-                        )))?;
+                    let cp_entry = class.constant_pool.get(index).ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::IllegalArgument(format!(
+                            "Constant pool index {} out of bounds",
+                            index
+                        )))
+                    })?;
 
                     let (interface_index, name_and_type_index) = match cp_entry {
-                        crate::class_file::ConstantPoolEntry::ConstantInterfaceMethodref { class_index, name_and_type_index } => {
-                            (class_index, name_and_type_index)
+                        crate::class_file::ConstantPoolEntry::ConstantInterfaceMethodref {
+                            class_index,
+                            name_and_type_index,
+                        } => (class_index, name_and_type_index),
+                        _ => {
+                            return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                                "Expected InterfaceMethodRef constant".to_string(),
+                            )))
                         }
-                        _ => return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("Expected InterfaceMethodRef constant".to_string()))),
                     };
 
                     // Get the interface name
                     let interface_entry = class.constant_pool.get(*interface_index as usize);
                     let interface_name = match interface_entry {
-                        Some(crate::class_file::ConstantPoolEntry::ConstantClass { name_index }) => {
-                            class.get_string(*name_index).unwrap_or_default()
+                        Some(crate::class_file::ConstantPoolEntry::ConstantClass {
+                            name_index,
+                        }) => class.get_string(*name_index).unwrap_or_default(),
+                        _ => {
+                            return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                                "Invalid interface reference".to_string(),
+                            )))
                         }
-                        _ => return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("Invalid interface reference".to_string()))),
                     };
 
                     // Get the method name and descriptor
-                    let name_and_type_entry = class.constant_pool.get(*name_and_type_index as usize);
+                    let name_and_type_entry =
+                        class.constant_pool.get(*name_and_type_index as usize);
                     let (method_name, descriptor) = match name_and_type_entry {
-                        Some(crate::class_file::ConstantPoolEntry::ConstantNameAndType { name_index, descriptor_index }) => {
+                        Some(crate::class_file::ConstantPoolEntry::ConstantNameAndType {
+                            name_index,
+                            descriptor_index,
+                        }) => {
                             let name = class.get_string(*name_index).unwrap_or_default();
                             let desc = class.get_string(*descriptor_index).unwrap_or_default();
                             (name, desc)
                         }
-                        _ => return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("Invalid NameAndType reference".to_string()))),
+                        _ => {
+                            return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                                "Invalid NameAndType reference".to_string(),
+                            )))
+                        }
                     };
 
                     // Try to resolve the interface method
-                    if let Some((resolved_class_name, _)) = self.resolve_interface_method(&interface_name, &method_name, &descriptor) {
+                    if let Some((resolved_class_name, _)) =
+                        self.resolve_interface_method(&interface_name, &method_name, &descriptor)
+                    {
                         // Get the class and method without holding the borrow
                         if let Some(class_ref) = self.class_loader.get_class(&resolved_class_name) {
                             let method_name_clone = method_name.clone();
                             let descriptor_clone = descriptor.clone();
                             let class_clone = class_ref.clone();
-                            
-                            if let Some(method) = class_clone.find_method(&method_name_clone, &descriptor_clone) {
+
+                            if let Some(method) =
+                                class_clone.find_method(&method_name_clone, &descriptor_clone)
+                            {
                                 return self.execute_method(&class_clone, method, frame);
                             }
                         }
                     }
 
                     // Interface method not found
-                    return Err(to_runtime_error_enum(RuntimeError::MethodNotFound(interface_name, method_name)));
+                    return Err(to_runtime_error_enum(RuntimeError::MethodNotFound(
+                        interface_name,
+                        method_name,
+                    )));
                 }
 
                 // invokedynamic: invoke dynamically (for lambda and other dynamic features)
@@ -920,7 +1002,9 @@ impl Interpreter {
                     let _zero2 = code[frame.pc];
                     frame.pc += 1;
                     if _zero1 != 0 || _zero2 != 0 {
-                        return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("invokedynamic last two bytes must be zero".to_string())));
+                        return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                            "invokedynamic last two bytes must be zero".to_string(),
+                        )));
                     }
                     // Handle invokedynamic for string concatenation
                     self.handle_invokedynamic(class, frame, index)?;
@@ -970,11 +1054,12 @@ impl Interpreter {
                     let atype = code[frame.pc];
                     frame.pc += 1;
                     let count = frame.pop()?.as_int();
-                    
+
                     if count < 0 {
-                        return self.throw_exception(RuntimeError::NegativeArraySizeException(count));
+                        return self
+                            .throw_exception(RuntimeError::NegativeArraySizeException(count));
                     }
-                    
+
                     let array = match atype {
                         4 => HeapArray::BooleanArray(vec![false; count as usize]),
                         5 => HeapArray::CharArray(vec![0; count as usize]),
@@ -984,9 +1069,14 @@ impl Interpreter {
                         9 => HeapArray::ShortArray(vec![0; count as usize]),
                         10 => HeapArray::IntArray(vec![0; count as usize]),
                         11 => HeapArray::LongArray(vec![0; count as usize]),
-                        _ => return self.throw_exception(RuntimeError::IllegalArgument(format!("Unknown array type: {}", atype))),
+                        _ => {
+                            return self.throw_exception(RuntimeError::IllegalArgument(format!(
+                                "Unknown array type: {}",
+                                atype
+                            )))
+                        }
                     };
-                    
+
                     let addr = self.memory.heap.allocate_array(array);
                     frame.push(Value::ArrayRef(addr))?;
                 }
@@ -996,11 +1086,12 @@ impl Interpreter {
                     let _index = self.read_u16(code, frame.pc);
                     frame.pc += 2;
                     let count = frame.pop()?.as_int();
-                    
+
                     if count < 0 {
-                        return self.throw_exception(RuntimeError::NegativeArraySizeException(count));
+                        return self
+                            .throw_exception(RuntimeError::NegativeArraySizeException(count));
                     }
-                    
+
                     let array = HeapArray::ReferenceArray(vec![0; count as usize]);
                     let addr = self.memory.heap.allocate_array(array);
                     frame.push(Value::ArrayRef(addr))?;
@@ -1009,12 +1100,20 @@ impl Interpreter {
                 // arraylength: get length of array
                 0xbe => {
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    let length = self.memory.heap.array_length(addr)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array length error: {}", e))))?;
-                    
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    let length = self.memory.heap.array_length(addr).map_err(|e| {
+                        to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                            "Array length error: {}",
+                            e
+                        )))
+                    })?;
+
                     frame.push(Value::Int(length as i32))?;
                 }
 
@@ -1022,12 +1121,20 @@ impl Interpreter {
                 0x2e => {
                     let index = frame.pop()?.as_int() as usize;
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    let value = self.memory.heap.array_get(addr, index)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array get error: {}", e))))?;
-                    
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    let value = self.memory.heap.array_get(addr, index).map_err(|e| {
+                        to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                            "Array get error: {}",
+                            e
+                        )))
+                    })?;
+
                     frame.push(value)?;
                 }
 
@@ -1036,23 +1143,42 @@ impl Interpreter {
                     let value = frame.pop()?;
                     let index = frame.pop()?.as_int() as usize;
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    self.memory.heap.array_set(addr, index, value)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array set error: {}", e))))?;
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    self.memory
+                        .heap
+                        .array_set(addr, index, value)
+                        .map_err(|e| {
+                            to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                                "Array set error: {}",
+                                e
+                            )))
+                        })?;
                 }
 
                 // baload: load byte/boolean from array
                 0x33 => {
                     let index = frame.pop()?.as_int() as usize;
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    let value = self.memory.heap.array_get(addr, index)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array get error: {}", e))))?;
-                    
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    let value = self.memory.heap.array_get(addr, index).map_err(|e| {
+                        to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                            "Array get error: {}",
+                            e
+                        )))
+                    })?;
+
                     frame.push(value)?;
                 }
 
@@ -1061,23 +1187,42 @@ impl Interpreter {
                     let value = frame.pop()?;
                     let index = frame.pop()?.as_int() as usize;
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    self.memory.heap.array_set(addr, index, value)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array set error: {}", e))))?;
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    self.memory
+                        .heap
+                        .array_set(addr, index, value)
+                        .map_err(|e| {
+                            to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                                "Array set error: {}",
+                                e
+                            )))
+                        })?;
                 }
 
                 // caload: load char from array
                 0x34 => {
                     let index = frame.pop()?.as_int() as usize;
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    let value = self.memory.heap.array_get(addr, index)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array get error: {}", e))))?;
-                    
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    let value = self.memory.heap.array_get(addr, index).map_err(|e| {
+                        to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                            "Array get error: {}",
+                            e
+                        )))
+                    })?;
+
                     frame.push(value)?;
                 }
 
@@ -1086,23 +1231,42 @@ impl Interpreter {
                     let value = frame.pop()?;
                     let index = frame.pop()?.as_int() as usize;
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    self.memory.heap.array_set(addr, index, value)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array set error: {}", e))))?;
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    self.memory
+                        .heap
+                        .array_set(addr, index, value)
+                        .map_err(|e| {
+                            to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                                "Array set error: {}",
+                                e
+                            )))
+                        })?;
                 }
 
                 // saload: load short from array
                 0x35 => {
                     let index = frame.pop()?.as_int() as usize;
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    let value = self.memory.heap.array_get(addr, index)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array get error: {}", e))))?;
-                    
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    let value = self.memory.heap.array_get(addr, index).map_err(|e| {
+                        to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                            "Array get error: {}",
+                            e
+                        )))
+                    })?;
+
                     frame.push(value)?;
                 }
 
@@ -1111,23 +1275,42 @@ impl Interpreter {
                     let value = frame.pop()?;
                     let index = frame.pop()?.as_int() as usize;
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    self.memory.heap.array_set(addr, index, value)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array set error: {}", e))))?;
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    self.memory
+                        .heap
+                        .array_set(addr, index, value)
+                        .map_err(|e| {
+                            to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                                "Array set error: {}",
+                                e
+                            )))
+                        })?;
                 }
 
                 // faload: load float from array
                 0x30 => {
                     let index = frame.pop()?.as_int() as usize;
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    let value = self.memory.heap.array_get(addr, index)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array get error: {}", e))))?;
-                    
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    let value = self.memory.heap.array_get(addr, index).map_err(|e| {
+                        to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                            "Array get error: {}",
+                            e
+                        )))
+                    })?;
+
                     frame.push(value)?;
                 }
 
@@ -1136,23 +1319,42 @@ impl Interpreter {
                     let value = frame.pop()?;
                     let index = frame.pop()?.as_int() as usize;
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    self.memory.heap.array_set(addr, index, value)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array set error: {}", e))))?;
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    self.memory
+                        .heap
+                        .array_set(addr, index, value)
+                        .map_err(|e| {
+                            to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                                "Array set error: {}",
+                                e
+                            )))
+                        })?;
                 }
 
                 // aaload: load reference from array
                 0x32 => {
                     let index = frame.pop()?.as_int() as usize;
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    let value = self.memory.heap.array_get(addr, index)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array get error: {}", e))))?;
-                    
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    let value = self.memory.heap.array_get(addr, index).map_err(|e| {
+                        to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                            "Array get error: {}",
+                            e
+                        )))
+                    })?;
+
                     frame.push(value)?;
                 }
 
@@ -1161,11 +1363,22 @@ impl Interpreter {
                     let value = frame.pop()?;
                     let index = frame.pop()?.as_int() as usize;
                     let array_ref = frame.pop()?;
-                    let addr = array_ref.as_reference()
-                        .ok_or_else(|| to_runtime_error_enum(RuntimeError::InvalidTypeConversion("not a reference".to_string(), "array reference".to_string())))?;
-                    
-                    self.memory.heap.array_set(addr, index, value)
-                        .map_err(|e| to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Array set error: {}", e))))?;
+                    let addr = array_ref.as_reference().ok_or_else(|| {
+                        to_runtime_error_enum(RuntimeError::InvalidTypeConversion(
+                            "not a reference".to_string(),
+                            "array reference".to_string(),
+                        ))
+                    })?;
+
+                    self.memory
+                        .heap
+                        .array_set(addr, index, value)
+                        .map_err(|e| {
+                            to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!(
+                                "Array set error: {}",
+                                e
+                            )))
+                        })?;
                 }
 
                 // Unknown opcode
@@ -1179,9 +1392,16 @@ impl Interpreter {
     }
 
     /// Load a constant from the constant pool onto the stack
-    fn load_constant(&mut self, frame: &mut StackFrame, class: &ClassFile, index: u16) -> InterpreterResult {
+    fn load_constant(
+        &mut self,
+        frame: &mut StackFrame,
+        class: &ClassFile,
+        index: u16,
+    ) -> InterpreterResult {
         if index as usize >= class.constant_pool.len() {
-            return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(format!("Constant pool index {} out of bounds", index))));
+            return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                format!("Constant pool index {} out of bounds", index),
+            )));
         }
 
         let entry = &class.constant_pool[index as usize];
@@ -1197,7 +1417,8 @@ impl Interpreter {
                 if let Some(utf8) = class.constant_pool.get(*string_index as usize) {
                     if let crate::class_file::ConstantPoolEntry::ConstantUtf8 { bytes } = utf8 {
                         // Convert bytes to string
-                        let string_value = String::from_utf8(bytes.clone()).unwrap_or_else(|_| "[invalid utf8]".to_string());
+                        let string_value = String::from_utf8(bytes.clone())
+                            .unwrap_or_else(|_| "[invalid utf8]".to_string());
                         let addr = self.memory.heap.allocate_string(string_value);
                         frame.push(Value::Reference(addr))?;
                     }
@@ -1209,24 +1430,38 @@ impl Interpreter {
                 frame.push(Value::Reference(addr))?;
             }
             _ => {
-                return Err(to_runtime_error_enum(RuntimeError::UnsupportedOperation(format!("Unsupported constant type at index {}", index))));
+                return Err(to_runtime_error_enum(RuntimeError::UnsupportedOperation(
+                    format!("Unsupported constant type at index {}", index),
+                )));
             }
         }
         Ok(())
     }
 
     /// Invoke a static method
-    fn invoke_static(&mut self, class: &ClassFile, frame: &mut StackFrame, index: usize) -> InterpreterResult {
-        let cp_entry = class.constant_pool.get(index)
-            .ok_or_else(|| to_runtime_error_enum(RuntimeError::IllegalArgument(
-                format!("Constant pool index {} out of bounds", index)
-            )))?;
+    fn invoke_static(
+        &mut self,
+        class: &ClassFile,
+        frame: &mut StackFrame,
+        index: usize,
+    ) -> InterpreterResult {
+        let cp_entry = class.constant_pool.get(index).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::IllegalArgument(format!(
+                "Constant pool index {} out of bounds",
+                index
+            )))
+        })?;
 
         let (class_index, name_and_type_index) = match cp_entry {
-            crate::class_file::ConstantPoolEntry::ConstantMethodref { class_index, name_and_type_index } => {
-                (class_index, name_and_type_index)
+            crate::class_file::ConstantPoolEntry::ConstantMethodref {
+                class_index,
+                name_and_type_index,
+            } => (class_index, name_and_type_index),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Expected MethodRef constant".to_string(),
+                )))
             }
-            _ => return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("Expected MethodRef constant".to_string()))),
         };
 
         // Get the class name
@@ -1235,77 +1470,119 @@ impl Interpreter {
             Some(crate::class_file::ConstantPoolEntry::ConstantClass { name_index }) => {
                 class.get_string(*name_index).unwrap_or_default()
             }
-            _ => return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("Invalid class reference".to_string()))),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Invalid class reference".to_string(),
+                )))
+            }
         };
 
         // Get the method name and descriptor
         let name_and_type_entry = class.constant_pool.get(*name_and_type_index as usize);
         let (method_name, descriptor) = match name_and_type_entry {
-            Some(crate::class_file::ConstantPoolEntry::ConstantNameAndType { name_index, descriptor_index }) => {
+            Some(crate::class_file::ConstantPoolEntry::ConstantNameAndType {
+                name_index,
+                descriptor_index,
+            }) => {
                 let name = class.get_string(*name_index).unwrap_or_default();
                 let desc = class.get_string(*descriptor_index).unwrap_or_default();
                 (name, desc)
             }
-            _ => return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("Invalid NameAndType reference".to_string()))),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Invalid NameAndType reference".to_string(),
+                )))
+            }
         };
 
         // Try to resolve the method
-        if let Some((resolved_class_name, _)) = self.resolve_method(&target_class_name, &method_name, &descriptor) {
+        if let Some((resolved_class_name, _)) =
+            self.resolve_method(&target_class_name, &method_name, &descriptor)
+        {
             // Get the class and method without holding the borrow
             if let Some(class_ref) = self.class_loader.get_class(&resolved_class_name) {
                 let method_name_clone = method_name.clone();
                 let descriptor_clone = descriptor.clone();
                 let class_clone = class_ref.clone();
-                
-                if let Some(method) = class_clone.find_method(&method_name_clone, &descriptor_clone) {
+
+                if let Some(method) = class_clone.find_method(&method_name_clone, &descriptor_clone)
+                {
                     return self.execute_method(&class_clone, method, frame);
                 }
             }
         }
 
         // Method not found
-        Err(to_runtime_error_enum(RuntimeError::MethodNotFound(target_class_name, method_name)))
+        Err(to_runtime_error_enum(RuntimeError::MethodNotFound(
+            target_class_name,
+            method_name,
+        )))
     }
 
     /// Resolve a method through class hierarchy
-    fn resolve_method(&self, class_name: &str, method_name: &str, descriptor: &str) -> Option<(String, String)> {
+    fn resolve_method(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        descriptor: &str,
+    ) -> Option<(String, String)> {
         // First, try to find the class
         let class = self.class_loader.get_class(class_name)?;
-        
+
         // Try to find the method in this class
         if class.find_method(method_name, descriptor).is_some() {
             return Some((class_name.to_string(), method_name.to_string()));
         }
-        
+
         // If not found, try the super class
         if let Some(super_class_name) = class.get_super_class_name() {
             return self.resolve_method(&super_class_name, method_name, descriptor);
         }
-        
+
         // Method not found in hierarchy
         None
     }
 
     /// Resolve an interface method
-    fn resolve_interface_method(&self, interface_name: &str, method_name: &str, descriptor: &str) -> Option<(String, String)> {
+    fn resolve_interface_method(
+        &self,
+        interface_name: &str,
+        method_name: &str,
+        descriptor: &str,
+    ) -> Option<(String, String)> {
         // For now, we'll just treat interface methods like regular methods
         // In a real implementation, we'd need to check all implemented interfaces
         self.resolve_method(interface_name, method_name, descriptor)
     }
 
     /// Invoke a virtual method
-    fn invoke_virtual(&mut self, class: &ClassFile, frame: &mut StackFrame, index: usize) -> InterpreterResult {
-        let cp_entry = class.constant_pool.get(index)
-            .ok_or_else(|| to_runtime_error_enum(RuntimeError::IllegalArgument(
-                format!("Constant pool index {} out of bounds", index)
-            )))?;
+    fn invoke_virtual(
+        &mut self,
+        class: &ClassFile,
+        frame: &mut StackFrame,
+        index: usize,
+    ) -> InterpreterResult {
+        let cp_entry = class.constant_pool.get(index).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::IllegalArgument(format!(
+                "Constant pool index {} out of bounds",
+                index
+            )))
+        })?;
 
         let (class_index, name_and_type_index) = match cp_entry {
-            crate::class_file::ConstantPoolEntry::ConstantMethodref { class_index, name_and_type_index } |
-            crate::class_file::ConstantPoolEntry::ConstantInterfaceMethodref { class_index, name_and_type_index } => {
-                (class_index, name_and_type_index)
+            crate::class_file::ConstantPoolEntry::ConstantMethodref {
+                class_index,
+                name_and_type_index,
             }
-            _ => return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("Expected MethodRef or InterfaceMethodRef constant".to_string()))),
+            | crate::class_file::ConstantPoolEntry::ConstantInterfaceMethodref {
+                class_index,
+                name_and_type_index,
+            } => (class_index, name_and_type_index),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Expected MethodRef or InterfaceMethodRef constant".to_string(),
+                )))
+            }
         };
 
         // Get the class name
@@ -1314,18 +1591,29 @@ impl Interpreter {
             Some(crate::class_file::ConstantPoolEntry::ConstantClass { name_index }) => {
                 class.get_string(*name_index).unwrap_or_default()
             }
-            _ => return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("Invalid class reference".to_string()))),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Invalid class reference".to_string(),
+                )))
+            }
         };
 
         // Get the method name and descriptor
         let name_and_type_entry = class.constant_pool.get(*name_and_type_index as usize);
         let (method_name, descriptor) = match name_and_type_entry {
-            Some(crate::class_file::ConstantPoolEntry::ConstantNameAndType { name_index, descriptor_index }) => {
+            Some(crate::class_file::ConstantPoolEntry::ConstantNameAndType {
+                name_index,
+                descriptor_index,
+            }) => {
                 let name = class.get_string(*name_index).unwrap_or_default();
                 let desc = class.get_string(*descriptor_index).unwrap_or_default();
                 (name, desc)
             }
-            _ => return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("Invalid NameAndType reference".to_string()))),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Invalid NameAndType reference".to_string(),
+                )))
+            }
         };
 
         // Handle PrintStream.println
@@ -1345,41 +1633,59 @@ impl Interpreter {
         }
 
         // Try to resolve the method through class hierarchy
-        if let Some((resolved_class_name, _)) = self.resolve_method(&target_class_name, &method_name, &descriptor) {
+        if let Some((resolved_class_name, _)) =
+            self.resolve_method(&target_class_name, &method_name, &descriptor)
+        {
             // Get the class and method without holding the borrow
             if let Some(class_ref) = self.class_loader.get_class(&resolved_class_name) {
                 let method_name_clone = method_name.clone();
                 let descriptor_clone = descriptor.clone();
                 let class_clone = class_ref.clone();
-                
-                if let Some(method) = class_clone.find_method(&method_name_clone, &descriptor_clone) {
+
+                if let Some(method) = class_clone.find_method(&method_name_clone, &descriptor_clone)
+                {
                     return self.execute_method(&class_clone, method, frame);
                 }
             }
         }
 
         // Method not found
-        Err(to_runtime_error_enum(RuntimeError::MethodNotFound(target_class_name, method_name)))
+        Err(to_runtime_error_enum(RuntimeError::MethodNotFound(
+            target_class_name,
+            method_name,
+        )))
     }
 
     /// Execute a method
-    fn execute_method(&mut self, class: &ClassFile, method: &MethodInfo, caller_frame: &mut StackFrame) -> InterpreterResult {
+    fn execute_method(
+        &mut self,
+        class: &ClassFile,
+        method: &MethodInfo,
+        caller_frame: &mut StackFrame,
+    ) -> InterpreterResult {
         // Find the Code attribute
-        let code_attr = self.find_code_attribute(class, method)
-            .ok_or_else(|| to_runtime_error_enum(RuntimeError::UnsupportedOperation("Code attribute not found".to_string())))?;
+        let code_attr = self.find_code_attribute(class, method).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::UnsupportedOperation(
+                "Code attribute not found".to_string(),
+            ))
+        })?;
 
         let max_stack = self.read_u16(&code_attr.info, 0) as usize;
         let max_locals = self.read_u16(&code_attr.info, 2) as usize;
         let code_length = self.read_u32(&code_attr.info, 4) as usize;
 
         // Get method name
-        let method_name = class.get_string(method.name_index).unwrap_or_else(|| "unknown".to_string());
+        let method_name = class
+            .get_string(method.name_index)
+            .unwrap_or_else(|| "unknown".to_string());
 
         // Create a new frame for the method
         let mut frame = StackFrame::new(max_locals, max_stack, method_name.clone());
 
         // Parse the method descriptor to get parameter count
-        let descriptor = class.get_string(method.descriptor_index).unwrap_or_default();
+        let descriptor = class
+            .get_string(method.descriptor_index)
+            .unwrap_or_default();
         let param_count = self.count_parameters(&descriptor);
 
         // Pop arguments from caller frame and push to new frame's locals
@@ -1455,7 +1761,11 @@ impl Interpreter {
     }
 
     /// Find the Code attribute in a method
-    fn find_code_attribute<'a>(&self, _class: &ClassFile, method: &'a MethodInfo) -> Option<&'a AttributeInfo> {
+    fn find_code_attribute<'a>(
+        &self,
+        _class: &ClassFile,
+        method: &'a MethodInfo,
+    ) -> Option<&'a AttributeInfo> {
         method.attributes.iter().find(|attr| {
             // We could check the name against class constant pool here
             // For now, just find an attribute that could be Code
@@ -1497,26 +1807,42 @@ impl Interpreter {
     }
 
     /// Handle invokedynamic instruction
-    fn handle_invokedynamic(&mut self, class: &ClassFile, frame: &mut StackFrame, index: usize) -> InterpreterResult {
-        let cp_entry = class.constant_pool.get(index)
-            .ok_or_else(|| to_runtime_error_enum(RuntimeError::IllegalArgument(
-                format!("Constant pool index {} out of bounds", index)
-            )))?;
+    fn handle_invokedynamic(
+        &mut self,
+        class: &ClassFile,
+        frame: &mut StackFrame,
+        index: usize,
+    ) -> InterpreterResult {
+        let cp_entry = class.constant_pool.get(index).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::IllegalArgument(format!(
+                "Constant pool index {} out of bounds",
+                index
+            )))
+        })?;
 
         let (_bootstrap_index, name_and_type_index) = match cp_entry {
-            crate::class_file::ConstantPoolEntry::ConstantInvokeDynamic { bootstrap_method_attr_index, name_and_type_index } => {
-                (bootstrap_method_attr_index, name_and_type_index)
+            crate::class_file::ConstantPoolEntry::ConstantInvokeDynamic {
+                bootstrap_method_attr_index,
+                name_and_type_index,
+            } => (bootstrap_method_attr_index, name_and_type_index),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Expected InvokeDynamic constant".to_string(),
+                )))
             }
-            _ => return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("Expected InvokeDynamic constant".to_string()))),
         };
 
         // Get the method name from NameAndType
         let name_and_type_entry = class.constant_pool.get(*name_and_type_index as usize);
         let method_name = match name_and_type_entry {
-            Some(crate::class_file::ConstantPoolEntry::ConstantNameAndType { name_index, .. }) => {
-                class.get_string(*name_index).unwrap_or_default()
+            Some(crate::class_file::ConstantPoolEntry::ConstantNameAndType {
+                name_index, ..
+            }) => class.get_string(*name_index).unwrap_or_default(),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Invalid NameAndType in invokedynamic".to_string(),
+                )))
             }
-            _ => return Err(to_runtime_error_enum(RuntimeError::IllegalArgument("Invalid NameAndType in invokedynamic".to_string()))),
         };
 
         // Handle string concatenation (makeConcatWithConstants)
@@ -1524,9 +1850,9 @@ impl Interpreter {
             // For string concatenation, pop values from stack and concatenate them
             // This is a simplified implementation - real JVM uses bootstrap methods
             // We'll pop all arguments and concatenate them
-            
+
             let mut result = String::new();
-            
+
             // In a real implementation, we'd know how many arguments to pop
             // For now, pop one argument as a simple example
             if !frame.stack.is_empty() {
@@ -1570,10 +1896,10 @@ impl Interpreter {
 
     /// Read a u32 from a byte slice at offset
     fn read_u32(&self, data: &[u8], offset: usize) -> u32 {
-        ((data[offset] as u32) << 24) |
-        ((data[offset + 1] as u32) << 16) |
-        ((data[offset + 2] as u32) << 8) |
-        (data[offset + 3] as u32)
+        ((data[offset] as u32) << 24)
+            | ((data[offset + 1] as u32) << 16)
+            | ((data[offset + 2] as u32) << 8)
+            | (data[offset + 3] as u32)
     }
 }
 
