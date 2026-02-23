@@ -8,6 +8,32 @@ byteorder = "1.4"
 log = "0.4"
 env_logger = "0.10"
 
+# JIT Compilation dependencies
+cranelift = "0.110"
+cranelift-jit = "0.110"
+cranelift-module = "0.110"
+cranelift-object = "0.110"
+cranelift-codegen = "0.110"
+cranelift-frontend = "0.110"
+cranelift-native = "0.110"
+
+# LLVM IR generation
+inkwell = { version = "0.5", optional = true, features = ["llvm18-0"] }
+
+# AOT compilation
+tempfile = "3.10"
+libc = "0.2"
+
+# Parallel GC
+rayon = "1.10"
+
+# WebAssembly emission
+wasm-encoder = { version = "0.25", optional = true }
+
+# Optional: Async I/O
+tokio = { version = "1.0", optional = true, features = ["fs", "io-util"] }
+async-trait = { version = "0.1", optional = true }
+
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 
@@ -22,3 +48,21 @@ harness = false
 [lib]
 name = "jvmrs"
 path = "src/lib.rs"
+
+[features]
+default = []
+llvm = ["inkwell"]
+# Embedding & systems
+no_std = []
+# C API for FFI embedding
+ffi = []
+# Polyglot Java/Rust interop
+interop = []
+# Async I/O
+async = ["tokio", "async-trait"]
+# SIMD acceleration for arrays
+simd = []
+# Truffle-style language implementation API
+truffle = []
+# WebAssembly backend
+wasm = ["wasm-encoder"]

@@ -2,8 +2,11 @@ use crate::class_file::{AttributeInfo, ClassFile, MethodInfo};
 use crate::class_loader::ClassLoader;
 use crate::debug::{debug_config_from_env, JvmDebugger};
 use crate::error::{to_runtime_error_enum, ClassLoadingError, JvmError, RuntimeError};
+use crate::jit::{CompilationLevel, JitManager, TieredCompilationConfig};
 use crate::memory::{Memory, StackFrame, Value};
 use crate::native::{init_builtins, NativeRegistry};
+use super::reflection::ReflectionApi;
+use log::info;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -31,6 +34,10 @@ pub struct Interpreter {
     native_registry: NativeRegistry,
     /// Reflection API instance
     reflection_api: ReflectionApi,
+    /// JIT manager for compilation
+    jit_manager: Option<JitManager>,
+    /// JIT compilation configuration
+    jit_config: TieredCompilationConfig,
 }
 
 /// Exception handler information
@@ -54,7 +61,11 @@ impl Interpreter {
         let mut memory = Memory::with_debugger(debugger.clone());
         let mut native_registry = NativeRegistry::new();
         init_builtins(&mut native_registry);
-        let mut reflection_api = ReflectionApi::new();
+        let reflection_api = ReflectionApi::new();
+
+        // Try to initialize JIT manager
+        let jit_manager = JitManager::new().ok();
+        let jit_config = TieredCompilationConfig::default();
 
         Interpreter {
             class_loader: ClassLoader::new_default(),
@@ -66,6 +77,8 @@ impl Interpreter {
             current_thread_id: 1, // Simplified: single-threaded execution
             native_registry,
             reflection_api,
+            jit_manager,
+            jit_config,
         }
     }
 
@@ -76,7 +89,11 @@ impl Interpreter {
         let memory = Memory::with_debugger(debugger.clone());
         let mut native_registry = NativeRegistry::new();
         init_builtins(&mut native_registry);
-        let mut reflection_api = ReflectionApi::new();
+        let reflection_api = ReflectionApi::new();
+
+        // Try to initialize JIT manager
+        let jit_manager = JitManager::new().ok();
+        let jit_config = TieredCompilationConfig::default();
 
         Interpreter {
             class_loader: ClassLoader::new(classpath),
@@ -88,7 +105,55 @@ impl Interpreter {
             current_thread_id: 1, // Simplified: single-threaded execution
             native_registry,
             reflection_api,
+            jit_manager,
+            jit_config,
         }
+    }
+
+    /// Create a new interpreter with JIT enabled and custom config
+    pub fn with_jit(jit_config: TieredCompilationConfig) -> Self {
+        let debug_config = debug_config_from_env();
+        let debugger = JvmDebugger::new(debug_config);
+        let mut memory = Memory::with_debugger(debugger.clone());
+        let mut native_registry = NativeRegistry::new();
+        init_builtins(&mut native_registry);
+        let reflection_api = ReflectionApi::new();
+
+        let jit_manager = JitManager::with_config(jit_config.clone()).ok();
+
+        Interpreter {
+            class_loader: ClassLoader::new_default(),
+            memory,
+            string_cache: HashMap::new(),
+            exception_handlers: Vec::new(),
+            current_exception: None,
+            debugger,
+            current_thread_id: 1,
+            native_registry,
+            reflection_api,
+            jit_manager,
+            jit_config,
+        }
+    }
+
+    /// Check if JIT is enabled
+    pub fn is_jit_enabled(&self) -> bool {
+        self.jit_manager.is_some() && self.jit_config.enabled
+    }
+
+    /// Enable or disable JIT compilation
+    pub fn set_jit_enabled(&mut self, enabled: bool) {
+        if enabled && self.jit_manager.is_none() {
+            self.jit_manager = JitManager::new().ok();
+        } else if !enabled {
+            self.jit_manager = None;
+        }
+        self.jit_config.enabled = enabled;
+    }
+
+    /// Get the JIT manager
+    pub fn jit_manager(&mut self) -> Option<&mut JitManager> {
+        self.jit_manager.as_mut()
     }
 
     /// Load a class from a file (legacy method, use load_class_by_name for proper classpath resolution)
@@ -433,6 +498,87 @@ impl Interpreter {
         method: &MethodInfo,
         caller_frame: &mut StackFrame,
     ) -> InterpreterResult {
+        // Get method and class names for profiling
+        let method_name = class
+            .get_string(method.name_index)
+            .unwrap_or_else(|| "unknown".to_string());
+        let class_name = class.get_class_name().unwrap_or("Unknown".to_string());
+
+        // Record method invocation for hot method detection
+        if let Some(jit_manager) = &mut self.jit_manager {
+            // Check if we should compile this method
+            if let Some(level) = jit_manager.record_and_check_compilation(&class_name, &method_name) {
+                info!(
+                    "Hot method detected: {}::{} - compiling at level {:?}",
+                    class_name, method_name, level
+                );
+
+                // Compile the method at the detected tier
+                if let Ok(compiled) = jit_manager.get_or_compile_method_at(class, method, Some(level)) {
+                    info!(
+                        "Method {}::{} compiled in {}ms ({} bytes)",
+                        class_name, method_name, compiled.compile_time_ms, compiled.code_size
+                    );
+                }
+            }
+        }
+
+        // Check if we have JIT compiled code for this method
+        let full_method_name = format!("{}.{}", class_name, method_name);
+
+        if let Some(jit_manager) = &self.jit_manager {
+            if let Some(compiled_code) = jit_manager.compiler.get_compiled_function(&full_method_name) {
+                info!("Executing JIT compiled method: {}", full_method_name);
+
+                // Create a new frame for the method
+                let code_attr = self.find_code_attribute(class, method).ok_or_else(|| {
+                    to_runtime_error_enum(RuntimeError::UnsupportedOperation(
+                        "Code attribute not found".to_string(),
+                    ))
+                })?;
+
+                let max_locals = self.read_u16(&code_attr.info, 0) as usize;
+                let max_stack = self.read_u16(&code_attr.info, 2) as usize;
+
+                let mut frame = StackFrame::new(max_locals, max_stack, method_name.clone());
+
+                // Parse the method descriptor to get parameter count
+                let descriptor = class
+                    .get_string(method.descriptor_index)
+                    .unwrap_or_default();
+                let param_count = self.count_parameters(&descriptor);
+
+                // Pop arguments from caller frame and push to new frame's locals
+                for i in 0..param_count {
+                    let value = caller_frame.pop()?;
+                    frame.store_local(param_count - 1 - i, value)?;
+                }
+
+                // Call the compiled function
+                unsafe {
+                    let result = (compiled_code.func)(
+                        &mut self.memory as *mut Memory,
+                        &mut frame as *mut StackFrame,
+                    );
+
+                    if result != 0 {
+                        return Err(to_runtime_error_enum(RuntimeError::UnsupportedOperation(
+                            format!("JIT compiled method returned error code: {}", result)
+                        )));
+                    }
+                }
+
+                // Push return value if any
+                if !frame.stack.is_empty() {
+                    let return_value = frame.pop()?;
+                    caller_frame.push(return_value)?;
+                }
+
+                return Ok(());
+            }
+        }
+
+        // Fallback to interpreter
         // Find the Code attribute
         let code_attr = self.find_code_attribute(class, method).ok_or_else(|| {
             to_runtime_error_enum(RuntimeError::UnsupportedOperation(
@@ -443,11 +589,6 @@ impl Interpreter {
         let max_stack = self.read_u16(&code_attr.info, 0) as usize;
         let max_locals = self.read_u16(&code_attr.info, 2) as usize;
         let code_length = self.read_u32(&code_attr.info, 4) as usize;
-
-        // Get method name
-        let method_name = class
-            .get_string(method.name_index)
-            .unwrap_or_else(|| "unknown".to_string());
 
         // Create a new frame for the method
         let mut frame = StackFrame::new(max_locals, max_stack, method_name.clone());

@@ -1,63 +1,175 @@
-# JVMRS - A Simple JVM Implementation in Rust
+# JVMRS - A JVM Implementation in Rust
 
-This is a basic implementation of the Java Virtual Machine (JVM) written in Rust. It demonstrates the core concepts of JVM execution including class file parsing, constant pool handling, instruction interpretation, and memory management.
+A Java Virtual Machine implementation written in Rust, featuring Cranelift JIT, AOT to native object files, generational GC, and multiple compilation backends.
+
+## Why JVMRS?
+
+Compared to HotSpot, OpenJ9, and GraalVM, jvmrs differentiates with **Rust-native design** and unique capabilities:
+
+| Capability | HotSpot / OpenJ9 / GraalVM | JVMRS |
+|------------|----------------------------|-------|
+| **Language** | C++ / Java | **Rust** – memory safety, zero-cost abstractions |
+| **JIT backend** | C2 / Graal / Eclipse OMR | **Cranelift** – Rust-native, permissive license |
+| **AOT output** | GraalVM native-image (binary) | **Object files (.o)** – link with any C toolchain |
+| **WebAssembly** | Limited / experimental | **WASM emission** – run Java in browsers |
+| **Java ↔ Rust interop** | JNI only | **Direct polyglot** – shared objects, no JNI |
+| **Embedded / no_std** | Not supported | **no_std targets** – microcontrollers, bare-metal |
+| **SIMD** | Auto-vectorization | **Explicit SIMD** – Rust `core::arch` |
+| **Embedding** | Heavy footprint | **C API** – embed as a library in any app |
+| **Truffle-style API** | GraalVM proprietary | **Open implementation** – language-agnostic runtime |
+
+**Use jvmrs when you need**: embeddable JVM, Java→WASM, Rust/Java interop, AOT to `.o` files, or a Rust-based JVM for research and tooling.
+
+---
+
+## Quick Start
+
+```bash
+# Compile example Java
+javac examples/HelloWorld.java
+
+# Run
+cargo run HelloWorld
+```
+
+---
+
+## Usage
+
+### Run a class
+
+```bash
+# Run main class (resolves via classpath)
+cargo run HelloWorld
+cargo run Calculator
+cargo run SimpleMath
+```
+
+### CLI options
+
+| Option | Description |
+|--------|-------------|
+| `--aot <output>` | AOT compile class to `.o` file instead of executing |
+| `--no-jit` | Disable JIT; interpreter-only |
+| `--jit-threshold <n>` | Invocations before JIT compile (default: 100) |
+| `--llvm` | Emit LLVM IR to stdout (requires `--features llvm`) |
+| `--help`, `-h` | Show help |
+
+### Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `JVMRS_DEBUG` | Enable debug logging |
+| `JVMRS_TRACE` | Enable trace logging |
+
+### Examples
+
+```bash
+# Run with default JIT
+cargo run Calculator
+
+# Run without JIT
+cargo run -- --no-jit Calculator
+
+# AOT compile to object file
+cargo run -- --aot output.o HelloWorld
+
+# Emit LLVM IR (requires: cargo build --features llvm)
+cargo run --features llvm -- --llvm Calculator > calc.ll
+
+# Custom JIT threshold
+cargo run -- --jit-threshold 50 SimpleMath
+```
+
+---
+
+## Examples
+
+Example Java programs in `examples/`:
+
+### HelloWorld.java
+
+```java
+public class HelloWorld {
+    public static void main(String[] args) {
+        System.out.println("Hello, World!");
+        int a = 5, b = 10, c = a + b;
+        System.out.println("5 + 10 = " + c);
+    }
+}
+```
+
+### Calculator.java
+
+```java
+public class Calculator {
+    public static int add(int a, int b) { return a + b; }
+    public static int subtract(int a, int b) { return a - b; }
+    public static int multiply(int a, int b) { return a * b; }
+    public static float divide(float a, float b) { return a / b; }
+    
+    public static void main(String[] args) {
+        int x = 20, y = 8;
+        System.out.println("x + y = " + add(x, y));
+        System.out.println("x - y = " + subtract(x, y));
+        System.out.println("x * y = " + multiply(x, y));
+        System.out.println("x / y = " + divide(x, y));
+    }
+}
+```
+
+### SimpleMath.java
+
+```java
+public class SimpleMath {
+    public static int add(int a, int b) { return a + b; }
+    public static void main(String[] args) {
+        int z = add(5, 10);
+        System.out.println("5 + 10 = " + z);
+    }
+}
+```
+
+### Running the examples
+
+```bash
+javac examples/HelloWorld.java examples/Calculator.java examples/SimpleMath.java
+cargo run HelloWorld    # Hello, World! / 5 + 10 = 15
+cargo run Calculator   # Arithmetic demo
+cargo run SimpleMath   # 5 + 10 = 15
+```
+
+---
 
 ## Features
 
-- Class file parser supporting Java bytecode
-- Constant pool parsing for various entry types
-- Basic instruction interpreter for common opcodes
-- Stack-based execution engine
-- Simple memory management with heap and stack frames
-- Support for primitive operations (integer and float arithmetic)
-- Basic method invocation
+### Core
+- Class file parser, constant pool, stack-based interpreter
+- Generational GC with parallel sweep
+- Arrays, strings, inheritance, interfaces
 
-## Project Structure
+### Compilation
+- **Cranelift JIT** – bytecode-to-native for hot methods
+- **Tiered compilation** – interpreter → baseline → optimized
+- **AOT** – compile to `.o` via cranelift-object
+- **LLVM IR** (`--features llvm`) – export to LLVM
+- **WebAssembly** (`--features wasm`) – emit WASM
 
-- `src/class_file.rs` - Class file parser and related data structures
-- `src/memory.rs` - Memory management (heap, stack frames, values)
-- `src/interpreter.rs` - Instruction interpreter and class loader
-- `src/main.rs` - Main entry point
-- `examples/` - Example Java source files
+### Optional (feature-gated)
+- `ffi` – C API for embedding
+- `interop` – Java/Rust polyglot
+- `async` – tokio async I/O
+- `simd` – SIMD array ops
+- `truffle` – GraalVM-style language API
 
-## Running the JVM
-
-1. Compile the Java examples:
-
-```bash
-javac examples/HelloWorld.java
-javac examples/Calculator.java
-```
-
-2. Run with our JVM:
-
-```bash
-cargo run HelloWorld
-cargo run Calculator
-```
-
-## Current Limitations
-
-This is a simplified implementation that only supports a subset of JVM features:
-
-- Limited instruction set (not all JVM opcodes are implemented)
-- No garbage collection
-- Minimal error handling
-- No threading support
-- No native method interface
-- Simplified class loading
-
-## Example Java Programs
-
-The examples directory contains simple Java programs that can be compiled and run on this JVM:
-
-- `HelloWorld.java` - A basic "Hello, World!" program
-- `Calculator.java` - Demonstrates arithmetic operations
+---
 
 ## Building
 
 ```bash
 cargo build
+cargo build --features llvm    # LLVM IR export
+cargo build --features wasm    # WebAssembly backend
 ```
 
 ## Testing
@@ -65,3 +177,9 @@ cargo build
 ```bash
 cargo test
 ```
+
+## Documentation
+
+- `ARCHITECTURE.md` – Design and components
+- `SPEC.md` – Technical specification
+- `TODO.md` – Roadmap

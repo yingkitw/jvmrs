@@ -1,19 +1,64 @@
+mod allocator;
 mod class_file;
 mod class_loader;
+mod aot_compiler;
+mod cranelift_jit;
 mod debug;
 mod error;
+mod gc;
 mod interpreter;
+mod jit;
 mod memory;
 mod native;
+mod reflection;
+
+#[cfg(feature = "ffi")]
+mod ffi;
+#[cfg(feature = "interop")]
+mod interop;
+#[cfg(feature = "async")]
+mod async_io;
+#[cfg(feature = "simd")]
+mod simd;
+#[cfg(feature = "truffle")]
+mod truffle;
 
 #[cfg(test)]
 mod tests;
 
 use debug::init_logging;
 use interpreter::Interpreter;
+use jit::AotCompiler;
+use log::info;
 
 use std::env;
+use std::path::Path;
 use std::process;
+
+/// Print usage information
+fn print_usage(program_name: &str) {
+    eprintln!("jvmrs - JVM Implementation in Rust");
+    eprintln!();
+    eprintln!("USAGE:");
+    eprintln!("  {} [OPTIONS] <classfile>", program_name);
+    eprintln!();
+    eprintln!("OPTIONS:");
+    eprintln!("  --aot <output>        Enable AOT compilation mode, output to <output>");
+    eprintln!("  --no-jit              Disable JIT compilation");
+    eprintln!("  --jit-threshold <n>   Set JIT compilation threshold (default: 100)");
+    eprintln!("  --llvm                Generate LLVM IR instead of executing");
+    eprintln!("  --help, -h            Print this help message");
+    eprintln!();
+    eprintln!("ENVIRONMENT VARIABLES:");
+    eprintln!("  JVMRS_DEBUG           Enable debug logging");
+    eprintln!("  JVMRS_TRACE           Enable trace logging");
+    eprintln!();
+    eprintln!("EXAMPLES:");
+    eprintln!("  {} HelloWorld", program_name);
+    eprintln!("  {} --aot output HelloWorld", program_name);
+    eprintln!("  {} --no-jit Calculator", program_name);
+    eprintln!("  {} --llvm MyClass > output.ll", program_name);
+}
 
 fn main() {
     // Initialize logging
@@ -29,19 +74,193 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: {} <classfile>", args[0]);
-        eprintln!("Example: {} HelloWorld", args[0]);
-        eprintln!("         {} Calculator", args[0]);
+        print_usage(&args[0]);
         process::exit(1);
     }
 
-    let class_name = &args[1];
+    // Parse command line arguments
+    let mut aot_output: Option<String> = None;
+    let mut disable_jit = false;
+    let mut jit_threshold: Option<u64> = None;
+    let mut generate_llvm = false;
+    let mut class_name: Option<String> = None;
 
-    // Create interpreter
-    let mut interpreter = Interpreter::new();
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--aot" => {
+                if i + 1 < args.len() {
+                    aot_output = Some(args[i + 1].clone());
+                    i += 2;
+                } else {
+                    eprintln!("Error: --aot requires an output path");
+                    process::exit(1);
+                }
+            }
+            "--no-jit" => {
+                disable_jit = true;
+                i += 1;
+            }
+            "--jit-threshold" => {
+                if i + 1 < args.len() {
+                    jit_threshold = Some(args[i + 1].parse().expect("Invalid JIT threshold"));
+                    i += 2;
+                } else {
+                    eprintln!("Error: --jit-threshold requires a number");
+                    process::exit(1);
+                }
+            }
+            "--llvm" => {
+                generate_llvm = true;
+                i += 1;
+            }
+            "--help" | "-h" => {
+                print_usage(&args[0]);
+                process::exit(0);
+            }
+            arg => {
+                if arg.starts_with('-') {
+                    eprintln!("Error: Unknown option: {}", arg);
+                    print_usage(&args[0]);
+                    process::exit(1);
+                }
+                class_name = Some(arg.to_string());
+                i += 1;
+            }
+        }
+    }
+
+    let class_name = match class_name {
+        Some(name) => name,
+        None => {
+            eprintln!("Error: No class file specified");
+            print_usage(&args[0]);
+            process::exit(1);
+        }
+    };
 
     // Get the class name without .class extension if present
     let class_name_without_ext = class_name.trim_end_matches(".class");
+
+    // AOT compilation mode
+    if let Some(output_path) = aot_output {
+        info!("AOT compilation mode: compiling '{}' to '{}'", class_name_without_ext, output_path);
+
+        // Load the class
+        let class_file = match class_file::ClassFile::from_file(class_name_without_ext) {
+            Ok(class) => class,
+            Err(e) => {
+                // Try loading from classpath
+                match class_loader::ClassLoader::new_default().load_class(class_name_without_ext) {
+                    Ok(_) => {
+                        // Get the loaded class
+                        let loader = class_loader::ClassLoader::new_default();
+                        match loader.get_class(class_name_without_ext) {
+                            Some(class) => class.clone(),
+                            None => {
+                                eprintln!("Error loading class '{}': {}", class_name_without_ext, e);
+                                process::exit(1);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error loading class '{}': {}", class_name_without_ext, e);
+                        process::exit(1);
+                    }
+                }
+            }
+        };
+
+        // Create AOT compiler
+        let mut aot_compiler = match AotCompiler::new() {
+            Ok(compiler) => compiler,
+            Err(e) => {
+                eprintln!("Error creating AOT compiler: {}", e);
+                process::exit(1);
+            }
+        };
+
+        // Compile the class
+        let output_path = Path::new(&output_path);
+        match aot_compiler.compile_class(&class_file, output_path) {
+            Ok(_) => {
+                println!("Successfully compiled {} to {}", class_name_without_ext, output_path.display());
+            }
+            Err(e) => {
+                eprintln!("Error compiling class: {}", e);
+                process::exit(1);
+            }
+        }
+
+        return;
+    }
+
+    // LLVM IR generation mode
+    if generate_llvm {
+        #[cfg(feature = "llvm")]
+        {
+            info!("LLVM IR generation mode: generating IR for '{}'", class_name_without_ext);
+
+            // Load the class
+            let loader = class_loader::ClassLoader::new_default();
+            if let Err(e) = loader.load_class(class_name_without_ext) {
+                eprintln!("Error loading class '{}': {}", class_name_without_ext, e);
+                process::exit(1);
+            }
+
+            let class_file = match loader.get_class(class_name_without_ext) {
+                Some(class) => class,
+                None => {
+                    eprintln!("Error: class not found");
+                    process::exit(1);
+                }
+            };
+
+            // Generate LLVM IR for each method
+            let mut llvm_gen = jit::llvm_backend::LlvmIrGenerator::new("jvmrs_module");
+
+            for method in &class_file.methods {
+                let method_name = class_file
+                    .get_string(method.name_index)
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                match llvm_gen.method_to_llvm_ir(class_file, method) {
+                    Ok(ir) => println!("{}", ir),
+                    Err(e) => {
+                        eprintln!("Error generating LLVM IR for method '{}': {}", method_name, e);
+                    }
+                }
+            }
+
+            return;
+        }
+
+        #[cfg(not(feature = "llvm"))]
+        {
+            eprintln!("Error: LLVM feature is not enabled");
+            eprintln!("Please rebuild with: cargo build --features llvm");
+            process::exit(1);
+        }
+    }
+
+    // Normal execution mode
+    let mut interpreter = Interpreter::new();
+
+    // Configure JIT
+    if disable_jit {
+        interpreter.set_jit_enabled(false);
+        info!("JIT compilation disabled");
+    } else if let Some(threshold) = jit_threshold {
+        use jit::TieredCompilationConfig;
+        let config = TieredCompilationConfig {
+            baseline_threshold: threshold,
+            ..Default::default()
+        };
+        interpreter = Interpreter::with_jit(config);
+        info!("JIT threshold set to {}", threshold);
+    } else {
+        info!("JIT compilation enabled (threshold: 100)");
+    }
 
     // Try to load the class using classpath resolution
     if let Err(e) = interpreter.load_class_by_name(class_name_without_ext) {

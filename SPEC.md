@@ -29,21 +29,25 @@ JVMRS is a simplified Java Virtual Machine implementation in Rust, designed for 
 - [x] Local variable management
 
 ### In Scope (Phase 2)
-- [ ] Object creation and manipulation
-- [ ] Array support
-- [ ] String operations
-- [ ] Exception handling
-- [ ] Class inheritance
-- [ ] Interface implementation
-- [ ] Garbage collection
+- [x] Object creation and manipulation
+- [x] Array support
+- [x] String operations
+- [x] Exception handling
+- [x] Class inheritance
+- [x] Interface implementation
+- [x] Garbage collection
+
+### In Scope (Phase 3)
+- [x] Just-In-Time compilation (Cranelift)
+- [x] AOT compilation to native object files
+- [x] LLVM IR export
+- [x] WebAssembly backend
 
 ### Out of Scope (for now)
 - JNI (Java Native Interface)
 - Threading and concurrency
-- Reflection API
-- Dynamic class loading
+- Reflection API (basics planned)
 - Security manager
-- Just-In-Time compilation
 
 ## Technical Specifications
 
@@ -269,21 +273,22 @@ pub trait Debugger {
 - [x] Integer arithmetic
 - [x] Simple examples working
 
-### Milestone 2: Core Features
-- [ ] Object support
-- [ ] Arrays
-- [ ] Strings
-- [ ] Exception handling
-- [ ] Garbage collection
+### Milestone 2: Core Features (Complete)
+- [x] Object support
+- [x] Arrays
+- [x] Strings
+- [x] Exception handling
+- [x] Garbage collection
 
 ### Milestone 3: Advanced Features
-- [ ] Inheritance and polymorphism
-- [ ] Interfaces
+- [x] Inheritance and polymorphism
+- [x] Interfaces
 - [ ] Reflection basics
 - [ ] Native method interface
 
-### Milestone 4: Optimization
-- [ ] JIT compilation
+### Milestone 4: Optimization (Partial)
+- [x] JIT compilation (Cranelift, tiered)
+- [x] AOT compilation (cranelift-object)
 - [ ] Memory optimizations
 - [ ] Performance tuning
 - [ ] Benchmark suite
@@ -418,7 +423,7 @@ pub trait Debugger {
 - Enhance documentation
 
 ### Medium-term (1 year)
-- JIT compilation
+- Expand JIT bytecode coverage
 - Threading support
 - Advanced optimizations
 - Tooling integration

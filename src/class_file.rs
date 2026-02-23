@@ -1,4 +1,5 @@
 use byteorder::{BigEndian, ReadBytesExt};
+use std::fmt;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::Path;
@@ -112,6 +113,17 @@ pub enum ParseError {
 impl From<io::Error> for ParseError {
     fn from(err: io::Error) -> Self {
         ParseError::IoError(err)
+    }
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseError::IoError(e) => write!(f, "IO error: {}", e),
+            ParseError::InvalidMagic(magic) => write!(f, "Invalid magic number: 0x{:08X} (expected 0xCAFEBABE)", magic),
+            ParseError::InvalidConstantPoolTag(tag) => write!(f, "Invalid constant pool tag: {}", tag),
+            ParseError::InvalidAttributeLength => write!(f, "Invalid attribute length"),
+        }
     }
 }
 
