@@ -10,3 +10,15 @@ env_logger = "0.10"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "jvm_benchmarks"
+harness = false
+
+[[bench]]
+name = "instruction_benchmarks"
+harness = false
+
+[lib]
+name = "jvmrs"
+path = "src/lib.rs"

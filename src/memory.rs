@@ -1,9 +1,14 @@
+use crate::debug::JvmDebugger;
 use crate::error::{to_runtime_error_enum, JvmError, MemoryError, RuntimeError};
 use std::collections::{HashMap, HashSet};
 
 /// Represents a value in the JVM
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+    Boolean(bool),
+    Byte(i8),
+    Char(u16),
+    Short(i16),
     Int(i32),
     Float(f32),
     Long(i64),
@@ -149,6 +154,138 @@ pub struct Heap {
     next_addr: u32,
     /// Marked objects for garbage collection
     marked: HashSet<u32>,
+    /// Debugger for logging
+    debugger: Option<JvmDebugger>,
+}
+
+/// Monitor for object synchronization
+#[derive(Debug, Clone)]
+pub struct Monitor {
+    /// Thread ID that owns the monitor (None if not owned)
+    pub owner: Option<u32>,
+    /// Number of times the owning thread has entered the monitor (reentrancy count)
+    pub count: u32,
+    /// Queue of threads waiting to enter the monitor
+    pub waiters: Vec<u32>,
+}
+
+impl Monitor {
+    /// Create a new monitor
+    pub fn new() -> Self {
+        Self {
+            owner: None,
+            count: 0,
+            waiters: Vec::new(),
+        }
+    }
+
+    /// Enter the monitor (acquire lock)
+    pub fn enter(&mut self, thread_id: u32) -> bool {
+        if let Some(owner) = self.owner {
+            if owner == thread_id {
+                // Reentrant lock
+                self.count += 1;
+                true
+            } else {
+                // Monitor is owned by another thread
+                self.waiters.push(thread_id);
+                false
+            }
+        } else {
+            // Monitor is not owned
+            self.owner = Some(thread_id);
+            self.count = 1;
+            true
+        }
+    }
+
+    /// Exit the monitor (release lock)
+    pub fn exit(&mut self, thread_id: u32) -> bool {
+        if let Some(owner) = self.owner {
+            if owner == thread_id {
+                self.count -= 1;
+                if self.count == 0 {
+                    // Release ownership
+                    self.owner = None;
+                    // Wake up next waiter if any
+                    if let Some(next_thread) = self.waiters.first() {
+                        let next_thread = *next_thread;
+                        self.waiters.remove(0);
+                        self.owner = Some(next_thread);
+                        self.count = 1;
+                    }
+                }
+                true
+            } else {
+                // Thread doesn't own the monitor
+                false
+            }
+        } else {
+            // Monitor is not owned
+            false
+        }
+    }
+
+    /// Check if a thread owns the monitor
+    pub fn is_owned_by(&self, thread_id: u32) -> bool {
+        self.owner.map_or(false, |owner| owner == thread_id)
+    }
+
+    /// Wait for the monitor (notify)
+    pub fn wait(&mut self, thread_id: u32) -> bool {
+        if let Some(owner) = self.owner {
+            if owner == thread_id {
+                // Add thread to waiters list
+                self.waiters.push(thread_id);
+                // Release the monitor
+                let old_count = self.count;
+                self.owner = None;
+                self.count = 0;
+
+                // Wake up next waiter if any (not the current thread)
+                if let Some(next_thread) = self.waiters.first() {
+                    let next_thread = *next_thread;
+                    self.waiters.remove(0);
+                    self.owner = Some(next_thread);
+                    self.count = 1;
+                }
+
+                old_count > 0
+            } else {
+                // Thread doesn't own the monitor
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Notify a single waiting thread
+    pub fn notify(&mut self) -> bool {
+        if self.waiters.is_empty() {
+            false
+        } else {
+            // Move the first waiter to the end (will get monitor after current owner releases)
+            if let Some(waiter) = self.waiters.first() {
+                let waiter = *waiter;
+                self.waiters.remove(0);
+                self.waiters.push(waiter);
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    /// Notify all waiting threads
+    pub fn notify_all(&mut self) -> usize {
+        let count = self.waiters.len();
+        if count > 0 {
+            // Rotate the waiters so they all get a chance
+            self.waiters.rotate_right(1);
+        }
+        count
+    }
 }
 
 /// Represents an object on the heap
@@ -160,6 +297,8 @@ pub struct HeapObject {
     pub marked: bool,
     /// String data for java/lang/String objects
     pub string_data: Option<String>,
+    /// Monitor for synchronized objects
+    pub monitor: Option<Monitor>,
 }
 
 /// Represents an array on the heap
@@ -184,6 +323,18 @@ impl Heap {
             arrays: HashMap::new(),
             next_addr: 1,
             marked: HashSet::new(),
+            debugger: None,
+        }
+    }
+
+    /// Create a new heap with debugger
+    pub fn with_debugger(debugger: JvmDebugger) -> Self {
+        Heap {
+            objects: HashMap::new(),
+            arrays: HashMap::new(),
+            next_addr: 1,
+            marked: HashSet::new(),
+            debugger: Some(debugger),
         }
     }
 
@@ -191,6 +342,11 @@ impl Heap {
     pub fn allocate(&mut self, class_name: String) -> u32 {
         let addr = self.next_addr;
         self.next_addr += 1;
+
+        if let Some(debugger) = &self.debugger {
+            debugger.log_memory_allocation(addr, 0, &class_name);
+        }
+
         self.objects.insert(
             addr,
             HeapObject {
@@ -198,6 +354,7 @@ impl Heap {
                 class_name,
                 marked: false,
                 string_data: None,
+                monitor: None,
             },
         );
         addr
@@ -207,6 +364,11 @@ impl Heap {
     pub fn allocate_string(&mut self, data: String) -> u32 {
         let addr = self.next_addr;
         self.next_addr += 1;
+
+        if let Some(debugger) = &self.debugger {
+            debugger.log_memory_allocation(addr, data.len(), "java/lang/String");
+        }
+
         self.objects.insert(
             addr,
             HeapObject {
@@ -214,6 +376,7 @@ impl Heap {
                 class_name: "java/lang/String".to_string(),
                 marked: false,
                 string_data: Some(data),
+                monitor: None,
             },
         );
         addr
@@ -520,6 +683,57 @@ impl Heap {
 
         Ok(())
     }
+
+    /// Enter a monitor for an object (monitorenter)
+    pub fn monitor_enter(&mut self, addr: u32, thread_id: u32) -> Result<(), MemoryError> {
+        let obj = self
+            .get_object_mut(addr)
+            .ok_or(MemoryError::InvalidReference(addr))?;
+
+        if obj.monitor.is_none() {
+            obj.monitor = Some(Monitor::new());
+        }
+
+        let monitor = obj.monitor.as_mut().unwrap();
+
+        if monitor.enter(thread_id) {
+            Ok(())
+        } else {
+            // Thread blocked - in a real JVM this would block the thread
+            // For simplicity, we'll just allow it through
+            Err(MemoryError::InvalidMonitorState)
+        }
+    }
+
+    /// Exit a monitor for an object (monitorexit)
+    pub fn monitor_exit(&mut self, addr: u32, thread_id: u32) -> Result<(), MemoryError> {
+        let obj = self
+            .get_object_mut(addr)
+            .ok_or(MemoryError::InvalidReference(addr))?;
+
+        if let Some(monitor) = &mut obj.monitor {
+            if Monitor::exit(monitor, thread_id) {
+                Ok(())
+            } else {
+                Err(MemoryError::IllegalMonitorState)
+            }
+        } else {
+            Err(MemoryError::IllegalMonitorState)
+        }
+    }
+
+    /// Check if a thread owns a monitor
+    pub fn owns_monitor(&self, addr: u32, thread_id: u32) -> bool {
+        if let Some(obj) = self.get_object(addr) {
+            if let Some(monitor) = &obj.monitor {
+                monitor.is_owned_by(thread_id)
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
 }
 
 impl Default for Heap {
@@ -592,6 +806,20 @@ impl Memory {
             heap: Heap::new(),
             static_fields: HashMap::new(),
         }
+    }
+
+    /// Create a new memory area with debugger
+    pub fn with_debugger(debugger: JvmDebugger) -> Self {
+        Memory {
+            stack: JVMStack::new(),
+            heap: Heap::with_debugger(debugger),
+            static_fields: HashMap::new(),
+        }
+    }
+
+    /// Set debugger for heap (useful if memory was created before debugger)
+    pub fn set_debugger(&mut self, debugger: JvmDebugger) {
+        self.heap = Heap::with_debugger(debugger);
     }
 
     /// Get a static field value

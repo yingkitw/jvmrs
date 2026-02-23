@@ -1,6 +1,6 @@
 use crate::class_file::ClassFile;
 use crate::memory::{StackFrame, Value};
-use log::{debug, error, info, trace, warn};
+use log::{debug, info, trace, warn};
 
 /// Configuration for debugging and logging
 #[derive(Debug, Clone)]
@@ -33,6 +33,7 @@ impl Default for DebugConfig {
 }
 
 /// Debugger for JVM operations
+#[derive(Clone, Debug)]
 pub struct JvmDebugger {
     config: DebugConfig,
     instruction_count: usize,
@@ -80,7 +81,7 @@ impl JvmDebugger {
     }
 
     /// Log an instruction before execution
-    pub fn log_instruction(&mut self, frame: &StackFrame, class: &ClassFile, opcode: u8) {
+    pub fn log_instruction(&mut self, frame: &StackFrame, _class: &ClassFile, opcode: u8) {
         if self.config.trace_instructions {
             self.instruction_count += 1;
             trace!(
@@ -95,8 +96,8 @@ impl JvmDebugger {
                 "  Frame: {} (PC: {}, Local vars: {}, Stack depth: {})",
                 frame.method_name,
                 frame.pc,
-                frame.local_vars.len(),
-                frame.operand_stack.len()
+                frame.locals.len(),
+                frame.stack.len()
             );
 
             // Log operand stack if configured
@@ -109,26 +110,23 @@ impl JvmDebugger {
 
     /// Log operand stack state
     fn log_operand_stack(&self, frame: &StackFrame) {
-        let max_entries = self
-            .config
-            .max_stack_entries
-            .unwrap_or(frame.operand_stack.len());
-        let to_show = std::cmp::min(max_entries, frame.operand_stack.len());
+        let max_entries = self.config.max_stack_entries.unwrap_or(frame.stack.len());
+        let to_show = std::cmp::min(max_entries, frame.stack.len());
 
         trace!(
             "    Operand Stack (showing {}/{}):",
             to_show,
-            frame.operand_stack.len()
+            frame.stack.len()
         );
-        for (i, value) in frame.operand_stack.iter().rev().take(to_show).enumerate() {
+        for (i, value) in frame.stack.iter().rev().take(to_show).enumerate() {
             trace!("      [{}]: {:?}", i, value);
         }
     }
 
     /// Log local variables state
     fn log_local_variables(&self, frame: &StackFrame) {
-        trace!("    Local Variables ({}):", frame.local_vars.len());
-        for (i, value) in frame.local_vars.iter().enumerate() {
+        trace!("    Local Variables ({}):", frame.locals.len());
+        for (i, value) in frame.locals.iter().enumerate() {
             trace!("      [{}]: {:?}", i, value);
         }
     }

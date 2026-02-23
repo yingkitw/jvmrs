@@ -4,16 +4,28 @@ mod debug;
 mod error;
 mod interpreter;
 mod memory;
+mod native;
 
 #[cfg(test)]
 mod tests;
 
+use debug::init_logging;
 use interpreter::Interpreter;
 
 use std::env;
 use std::process;
 
 fn main() {
+    // Initialize logging
+    let log_level = if env::var("JVMRS_DEBUG").is_ok() {
+        log::LevelFilter::Debug
+    } else if env::var("JVMRS_TRACE").is_ok() {
+        log::LevelFilter::Trace
+    } else {
+        log::LevelFilter::Info
+    };
+    init_logging(log_level);
+
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {

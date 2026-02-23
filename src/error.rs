@@ -232,6 +232,12 @@ pub enum MemoryError {
     OutOfMemory,
     /// Invalid heap address
     InvalidHeapAddress(u32),
+    /// Invalid object reference
+    InvalidReference(u32),
+    /// Invalid monitor state
+    InvalidMonitorState,
+    /// Illegal monitor state
+    IllegalMonitorState,
     /// Heap corruption detected
     HeapCorruption,
     /// Garbage collection failed
@@ -259,6 +265,9 @@ impl fmt::Display for MemoryError {
         match self {
             MemoryError::OutOfMemory => write!(f, "Out of memory"),
             MemoryError::InvalidHeapAddress(addr) => write!(f, "Invalid heap address: {}", addr),
+            MemoryError::InvalidReference(addr) => write!(f, "Invalid object reference: {}", addr),
+            MemoryError::InvalidMonitorState => write!(f, "Invalid monitor state"),
+            MemoryError::IllegalMonitorState => write!(f, "Illegal monitor state"),
             MemoryError::HeapCorruption => write!(f, "Heap corruption detected"),
             MemoryError::GcError(msg) => write!(f, "Garbage collection error: {}", msg),
             MemoryError::MemoryLimitExceeded(limit) => {
