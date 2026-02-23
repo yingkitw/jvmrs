@@ -7,7 +7,7 @@ use std::path::Path;
 const CLASS_MAGIC: u32 = 0xCAFEBABE;
 
 /// Represents a parsed Java class file
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ClassFile {
     pub magic: u32,
     pub minor_version: u16,
@@ -42,7 +42,7 @@ pub enum ConstantPoolEntry {
 }
 
 /// Field information
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FieldInfo {
     pub access_flags: u16,
     pub name_index: u16,
@@ -316,6 +316,18 @@ impl ClassFile {
     /// Get the class name
     pub fn get_class_name(&self) -> Option<String> {
         let class_entry = self.constant_pool.get(self.this_class as usize)?;
+        match class_entry {
+            ConstantPoolEntry::ConstantClass { name_index } => self.get_string(*name_index),
+            _ => None,
+        }
+    }
+
+    /// Get the super class name
+    pub fn get_super_class_name(&self) -> Option<String> {
+        if self.super_class == 0 {
+            return None; // java/lang/Object has no super class
+        }
+        let class_entry = self.constant_pool.get(self.super_class as usize)?;
         match class_entry {
             ConstantPoolEntry::ConstantClass { name_index } => self.get_string(*name_index),
             _ => None,

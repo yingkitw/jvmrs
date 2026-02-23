@@ -1,8 +1,14 @@
 mod class_file;
 mod memory;
 mod interpreter;
+mod error;
+mod class_loader;
+
+#[cfg(test)]
+mod tests;
 
 use interpreter::Interpreter;
+
 use std::env;
 use std::process;
 
@@ -21,20 +27,14 @@ fn main() {
     // Create interpreter
     let mut interpreter = Interpreter::new();
 
-    // Try to load the class
-    let class_path = if class_name.ends_with(".class") {
-        class_name.clone()
-    } else {
-        format!("{}.class", class_name)
-    };
+    // Get the class name without .class extension if present
+    let class_name_without_ext = class_name.trim_end_matches(".class");
 
-    if let Err(e) = interpreter.load_class(&class_path) {
-        eprintln!("Error loading class '{}': {}", class_path, e);
+    // Try to load the class using classpath resolution
+    if let Err(e) = interpreter.load_class_by_name(class_name_without_ext) {
+        eprintln!("Error loading class '{}': {}", class_name_without_ext, e);
         process::exit(1);
     }
-
-    // Get the actual class name from the class file
-    let class_name_without_ext = class_name.trim_end_matches(".class");
 
     // Run the main method
     if let Err(e) = interpreter.run_main(class_name_without_ext) {

@@ -1,0 +1,118 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+Cargo.lock
+*.d
+*.pdb
+
+# JVM bytecode files (except examples)
+*.class
+!examples/*.class
+
+# IDE and editor files
+.vscode/
+.idea/
+*.iml
+*.iws
+*.sublime-*
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+desktop.ini
+Thumbs.db
+ehthumbs.db
+*.stackdump
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Coverage and profiling
+*.gcda
+*.gcno
+*.profraw
+/flamegraph.svg
+/perf.data
+/coverage/
+
+# Output and build directories
+/output/
+/out/
+/build/
+/test-output/
+/bench-output/
+/benches/output/
+/generated/
+/fuzz/target/
+/docs/_build/
+/docs/_site/
+/book/
+/book-example/
+
+# Logs and temporary files
+*.log
+/logs/
+*.tmp
+*.temp
+/tmp/
+/temp/
+*.session
+*.bak
+*.backup
+*.lock
+
+# Environment and cache
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+/.cache/
+/.cargo/
+/.rustc/
+
+# Generated bindings
+/bindings/
+
+# Fuzz testing
+/fuzz/corpora/
+/fuzz/artifacts/
+
+# Vim specific
+[._]*.s[a-w][a-z]
+[._]s[a-w][a-z]
+*.un~
+Session.vim
+.netrwhist
+/netrwhist
+tags
+/tags
+
+# Emacs specific
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Kate specific
+.*.kate-swp
+
+# Auto-generated tag files
+tags
+/tags
