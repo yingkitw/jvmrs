@@ -3,8 +3,8 @@
 #[cfg(test)]
 mod tests {
     use crate::class_file::ClassFile;
-    use crate::memory::{Value, StackFrame};
     use crate::error::JvmError;
+    use crate::memory::{StackFrame, Value};
 
     /// Test basic class file parsing
     #[test]
@@ -14,14 +14,18 @@ mod tests {
             0xCA, 0xFE, 0xBA, 0xBE, // magic
             0x00, 0x00, // minor version
             0x00, 0x34, // major version (52 = Java 8)
-            0x00, 0x10, // constant pool count (16 entries)
-            // Constant pool entries would go here
-            // This is a minimal test - actual parsing would require full class file
+            0x00,
+            0x10, // constant pool count (16 entries)
+                  // Constant pool entries would go here
+                  // This is a minimal test - actual parsing would require full class file
         ];
 
         // Test that parsing fails gracefully for incomplete class files
         let result = ClassFile::parse(&class_bytes);
-        assert!(result.is_err(), "Should fail to parse incomplete class file");
+        assert!(
+            result.is_err(),
+            "Should fail to parse incomplete class file"
+        );
     }
 
     /// Test stack frame operations
@@ -43,8 +47,14 @@ mod tests {
         assert!(frame.pop().is_err(), "Should fail on stack underflow");
 
         // Test local variable bounds
-        assert!(frame.load_local(100).is_err(), "Should fail on out of bounds access");
-        assert!(frame.store_local(100, Value::Int(0)).is_err(), "Should fail on out of bounds store");
+        assert!(
+            frame.load_local(100).is_err(),
+            "Should fail on out of bounds access"
+        );
+        assert!(
+            frame.store_local(100, Value::Int(0)).is_err(),
+            "Should fail on out of bounds store"
+        );
 
         Ok(())
     }
@@ -91,7 +101,7 @@ mod tests {
     /// Test error types
     #[test]
     fn test_error_display() {
-        use crate::error::{RuntimeError, ParseError, MemoryError, ClassLoadingError, NativeError};
+        use crate::error::{ClassLoadingError, MemoryError, NativeError, ParseError, RuntimeError};
 
         // Test RuntimeError display
         let stack_underflow = RuntimeError::StackUnderflow;
@@ -108,7 +118,10 @@ mod tests {
 
         // Test ParseError display
         let invalid_magic = ParseError::InvalidMagic(0xDEADBEEF);
-        assert_eq!(format!("{}", invalid_magic), "Invalid magic number: 0xDEADBEEF (expected 0xCAFEBABE)");
+        assert_eq!(
+            format!("{}", invalid_magic),
+            "Invalid magic number: 0xDEADBEEF (expected 0xCAFEBABE)"
+        );
 
         // Test MemoryError display
         let out_of_memory = MemoryError::OutOfMemory;
@@ -116,10 +129,19 @@ mod tests {
 
         // Test ClassLoadingError display
         let class_file_not_found = ClassLoadingError::ClassFileNotFound("Test.class".to_string());
-        assert_eq!(format!("{}", class_file_not_found), "Class file not found: Test.class");
+        assert_eq!(
+            format!("{}", class_file_not_found),
+            "Class file not found: Test.class"
+        );
 
         // Test NativeError display
-        let native_method_not_found = NativeError::NativeMethodNotFound("java.lang.System".to_string(), "currentTimeMillis".to_string());
-        assert_eq!(format!("{}", native_method_not_found), "Native method java.lang.System.currentTimeMillis not found");
+        let native_method_not_found = NativeError::NativeMethodNotFound(
+            "java.lang.System".to_string(),
+            "currentTimeMillis".to_string(),
+        );
+        assert_eq!(
+            format!("{}", native_method_not_found),
+            "Native method java.lang.System.currentTimeMillis not found"
+        );
     }
 }

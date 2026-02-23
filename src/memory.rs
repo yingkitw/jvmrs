@@ -1,5 +1,5 @@
+use crate::error::{to_runtime_error_enum, JvmError, MemoryError, RuntimeError};
 use std::collections::{HashMap, HashSet};
-use crate::error::{RuntimeError, JvmError, MemoryError, to_runtime_error_enum};
 
 /// Represents a value in the JVM
 #[derive(Debug, Clone, PartialEq)]
@@ -106,12 +106,16 @@ impl StackFrame {
 
     /// Pop a value from the operand stack
     pub fn pop(&mut self) -> Result<Value, JvmError> {
-        self.stack.pop().ok_or_else(|| to_runtime_error_enum(RuntimeError::StackUnderflow))
+        self.stack
+            .pop()
+            .ok_or_else(|| to_runtime_error_enum(RuntimeError::StackUnderflow))
     }
 
     /// Peek at the top value on the operand stack
     pub fn peek(&self) -> Result<&Value, JvmError> {
-        self.stack.last().ok_or_else(|| to_runtime_error_enum(RuntimeError::StackUnderflow))
+        self.stack
+            .last()
+            .ok_or_else(|| to_runtime_error_enum(RuntimeError::StackUnderflow))
     }
 
     /// Load a local variable at index
@@ -125,7 +129,9 @@ impl StackFrame {
     /// Store a value to a local variable at index
     pub fn store_local(&mut self, index: usize, value: Value) -> Result<(), JvmError> {
         if index >= self.locals.len() {
-            return Err(to_runtime_error_enum(RuntimeError::LocalVariableOutOfBounds(index)));
+            return Err(to_runtime_error_enum(
+                RuntimeError::LocalVariableOutOfBounds(index),
+            ));
         }
         self.locals[index] = value;
         Ok(())
@@ -233,15 +239,13 @@ impl Heap {
 
     /// Get string data from a string object
     pub fn get_string_data(&self, addr: u32) -> Option<&String> {
-        self.objects
-            .get(&addr)
-            .and_then(|obj| {
-                if obj.class_name == "java/lang/String" {
-                    obj.string_data.as_ref()
-                } else {
-                    None
-                }
-            })
+        self.objects.get(&addr).and_then(|obj| {
+            if obj.class_name == "java/lang/String" {
+                obj.string_data.as_ref()
+            } else {
+                None
+            }
+        })
     }
 
     /// Check if an object is a string
@@ -283,14 +287,14 @@ impl Heap {
         // Mark phase: mark all reachable objects
         self.unmark_all();
         let mut to_mark: Vec<u32> = roots.to_vec();
-        
+
         while let Some(addr) = to_mark.pop() {
             if self.marked.contains(&addr) {
                 continue;
             }
-            
+
             self.mark(addr);
-            
+
             // Mark references from this object
             if let Some(obj) = self.objects.get(&addr) {
                 for value in obj.fields.values() {
@@ -301,7 +305,7 @@ impl Heap {
                     }
                 }
             }
-            
+
             // Mark references from arrays
             if let Some(array) = self.arrays.get(&addr) {
                 match array {
@@ -321,13 +325,13 @@ impl Heap {
         let mut freed = 0;
         let mut objects_to_remove = Vec::new();
         let mut arrays_to_remove = Vec::new();
-        
+
         for (addr, obj) in &self.objects {
             if !obj.marked {
                 objects_to_remove.push(*addr);
             }
         }
-        
+
         // Arrays are always considered reachable if referenced
         // For simplicity, we'll remove arrays that aren't in objects
         // In a real implementation, we'd track array references too
@@ -336,12 +340,12 @@ impl Heap {
                 arrays_to_remove.push(*addr);
             }
         }
-        
+
         for addr in objects_to_remove {
             self.objects.remove(&addr);
             freed += 1;
         }
-        
+
         for addr in arrays_to_remove {
             self.arrays.remove(&addr);
             freed += 1;
@@ -403,35 +407,46 @@ impl Heap {
 
     /// Get array element
     pub fn array_get(&self, addr: u32, index: usize) -> Result<Value, MemoryError> {
-        let array = self.arrays.get(&addr)
+        let array = self
+            .arrays
+            .get(&addr)
             .ok_or_else(|| MemoryError::InvalidHeapAddress(addr))?;
-        
+
         match array {
-            HeapArray::IntArray(v) => v.get(index)
+            HeapArray::IntArray(v) => v
+                .get(index)
                 .map(|&val| Value::Int(val))
                 .ok_or_else(|| MemoryError::InvalidArrayLength(index)),
-            HeapArray::FloatArray(v) => v.get(index)
+            HeapArray::FloatArray(v) => v
+                .get(index)
                 .map(|&val| Value::Float(val))
                 .ok_or_else(|| MemoryError::InvalidArrayLength(index)),
-            HeapArray::LongArray(v) => v.get(index)
+            HeapArray::LongArray(v) => v
+                .get(index)
                 .map(|&val| Value::Long(val))
                 .ok_or_else(|| MemoryError::InvalidArrayLength(index)),
-            HeapArray::DoubleArray(v) => v.get(index)
+            HeapArray::DoubleArray(v) => v
+                .get(index)
                 .map(|&val| Value::Double(val))
                 .ok_or_else(|| MemoryError::InvalidArrayLength(index)),
-            HeapArray::ReferenceArray(v) => v.get(index)
+            HeapArray::ReferenceArray(v) => v
+                .get(index)
                 .map(|&val| Value::Reference(val))
                 .ok_or_else(|| MemoryError::InvalidArrayLength(index)),
-            HeapArray::ByteArray(v) => v.get(index)
+            HeapArray::ByteArray(v) => v
+                .get(index)
                 .map(|&val| Value::Int(val as i32))
                 .ok_or_else(|| MemoryError::InvalidArrayLength(index)),
-            HeapArray::CharArray(v) => v.get(index)
+            HeapArray::CharArray(v) => v
+                .get(index)
                 .map(|&val| Value::Int(val as i32))
                 .ok_or_else(|| MemoryError::InvalidArrayLength(index)),
-            HeapArray::ShortArray(v) => v.get(index)
+            HeapArray::ShortArray(v) => v
+                .get(index)
                 .map(|&val| Value::Int(val as i32))
                 .ok_or_else(|| MemoryError::InvalidArrayLength(index)),
-            HeapArray::BooleanArray(v) => v.get(index)
+            HeapArray::BooleanArray(v) => v
+                .get(index)
                 .map(|&val| Value::Int(if val { 1 } else { 0 }))
                 .ok_or_else(|| MemoryError::InvalidArrayLength(index)),
         }
@@ -439,9 +454,11 @@ impl Heap {
 
     /// Set array element
     pub fn array_set(&mut self, addr: u32, index: usize, value: Value) -> Result<(), MemoryError> {
-        let array = self.arrays.get_mut(&addr)
+        let array = self
+            .arrays
+            .get_mut(&addr)
             .ok_or_else(|| MemoryError::InvalidHeapAddress(addr))?;
-        
+
         match array {
             HeapArray::IntArray(v) => {
                 if index >= v.len() {
@@ -471,8 +488,9 @@ impl Heap {
                 if index >= v.len() {
                     return Err(MemoryError::InvalidArrayLength(index));
                 }
-                v[index] = value.as_reference()
-                    .ok_or_else(|| MemoryError::InvalidArrayType("Expected reference".to_string()))?;
+                v[index] = value.as_reference().ok_or_else(|| {
+                    MemoryError::InvalidArrayType("Expected reference".to_string())
+                })?;
             }
             HeapArray::ByteArray(v) => {
                 if index >= v.len() {
@@ -499,7 +517,7 @@ impl Heap {
                 v[index] = value.as_int() != 0;
             }
         }
-        
+
         Ok(())
     }
 }

@@ -1,8 +1,9 @@
 mod class_file;
-mod memory;
-mod interpreter;
-mod error;
 mod class_loader;
+mod debug;
+mod error;
+mod interpreter;
+mod memory;
 
 #[cfg(test)]
 mod tests;

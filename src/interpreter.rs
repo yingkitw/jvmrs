@@ -1,5 +1,6 @@
 use crate::class_file::{AttributeInfo, ClassFile, MethodInfo};
 use crate::class_loader::ClassLoader;
+use crate::debug::{debug_config_from_env, init_logging, DebugConfig, JvmDebugger};
 use crate::error::{to_runtime_error_enum, ClassLoadingError, JvmError, RuntimeError};
 use crate::memory::{HeapArray, Memory, StackFrame, Value};
 use std::collections::HashMap;
@@ -20,6 +21,8 @@ pub struct Interpreter {
     exception_handlers: Vec<ExceptionHandler>,
     /// Current exception (if any)
     current_exception: Option<RuntimeError>,
+    /// Debugger for logging and tracing
+    debugger: JvmDebugger,
 }
 
 /// Exception handler information
@@ -38,23 +41,31 @@ struct ExceptionHandler {
 impl Interpreter {
     /// Create a new interpreter with default classpath
     pub fn new() -> Self {
+        let debug_config = debug_config_from_env();
+        let debugger = JvmDebugger::new(debug_config);
+
         Interpreter {
             class_loader: ClassLoader::new_default(),
             memory: Memory::new(),
             string_cache: HashMap::new(),
             exception_handlers: Vec::new(),
             current_exception: None,
+            debugger,
         }
     }
 
     /// Create a new interpreter with custom classpath
     pub fn with_classpath(classpath: Vec<std::path::PathBuf>) -> Self {
+        let debug_config = debug_config_from_env();
+        let debugger = JvmDebugger::new(debug_config);
+
         Interpreter {
             class_loader: ClassLoader::new(classpath),
             memory: Memory::new(),
             string_cache: HashMap::new(),
             exception_handlers: Vec::new(),
             current_exception: None,
+            debugger,
         }
     }
 
@@ -215,10 +226,15 @@ impl Interpreter {
         let code = code_attr.info[8..8 + code_length].to_vec();
 
         // Clone the class to avoid borrowing issues
+        let class_name = class.get_class_name().unwrap_or_else(|| "Unknown".to_string());
+        self.debugger.log_method_entry(&class_name, "main", "([Ljava/lang/String;)V");
+        
         let class_clone = class.clone();
-        self.execute_instructions(&mut frame, &class_clone, &code)?;
+        let result = self.execute_instructions(&mut frame, &class_clone, &code);
+        
+        self.debugger.log_method_exit(&class_name, "main", "([Ljava/lang/String;)V", None);
 
-        Ok(())
+        result
     }
 
     /// Execute bytecode instructions
@@ -230,7 +246,11 @@ impl Interpreter {
     ) -> InterpreterResult {
         while frame.pc < code.len() {
             let opcode = code[frame.pc];
+            let pc_before_increment = frame.pc;
             frame.pc += 1;
+
+            // Log instruction before execution
+            self.debugger.log_instruction(frame, class, opcode);
 
             match opcode {
                 // return: return void from method

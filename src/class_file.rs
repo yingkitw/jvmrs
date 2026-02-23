@@ -25,20 +25,54 @@ pub struct ClassFile {
 /// Constant pool entry types
 #[derive(Debug, Clone)]
 pub enum ConstantPoolEntry {
-    ConstantClass { name_index: u16 },
-    ConstantFieldref { class_index: u16, name_and_type_index: u16 },
-    ConstantMethodref { class_index: u16, name_and_type_index: u16 },
-    ConstantInterfaceMethodref { class_index: u16, name_and_type_index: u16 },
-    ConstantString { string_index: u16 },
-    ConstantInteger { bytes: i32 },
-    ConstantFloat { bytes: f32 },
-    ConstantLong { bytes: i64 },
-    ConstantDouble { bytes: f64 },
-    ConstantNameAndType { name_index: u16, descriptor_index: u16 },
-    ConstantUtf8 { bytes: Vec<u8> },
-    ConstantMethodHandle { reference_kind: u8, reference_index: u16 },
-    ConstantMethodType { descriptor_index: u16 },
-    ConstantInvokeDynamic { bootstrap_method_attr_index: u16, name_and_type_index: u16 },
+    ConstantClass {
+        name_index: u16,
+    },
+    ConstantFieldref {
+        class_index: u16,
+        name_and_type_index: u16,
+    },
+    ConstantMethodref {
+        class_index: u16,
+        name_and_type_index: u16,
+    },
+    ConstantInterfaceMethodref {
+        class_index: u16,
+        name_and_type_index: u16,
+    },
+    ConstantString {
+        string_index: u16,
+    },
+    ConstantInteger {
+        bytes: i32,
+    },
+    ConstantFloat {
+        bytes: f32,
+    },
+    ConstantLong {
+        bytes: i64,
+    },
+    ConstantDouble {
+        bytes: f64,
+    },
+    ConstantNameAndType {
+        name_index: u16,
+        descriptor_index: u16,
+    },
+    ConstantUtf8 {
+        bytes: Vec<u8>,
+    },
+    ConstantMethodHandle {
+        reference_kind: u8,
+        reference_index: u16,
+    },
+    ConstantMethodType {
+        descriptor_index: u16,
+    },
+    ConstantInvokeDynamic {
+        bootstrap_method_attr_index: u16,
+        name_and_type_index: u16,
+    },
 }
 
 /// Field information
@@ -171,7 +205,10 @@ impl ClassFile {
         })
     }
 
-    fn read_constant_pool_entry(cursor: &mut io::Cursor<&[u8]>, tag: u8) -> Result<ConstantPoolEntry, ParseError> {
+    fn read_constant_pool_entry(
+        cursor: &mut io::Cursor<&[u8]>,
+        tag: u8,
+    ) -> Result<ConstantPoolEntry, ParseError> {
         match tag {
             1 => {
                 // CONSTANT_Utf8
@@ -188,7 +225,9 @@ impl ClassFile {
             4 => {
                 // CONSTANT_Float
                 let bytes = cursor.read_u32::<BigEndian>()?;
-                Ok(ConstantPoolEntry::ConstantFloat { bytes: f32::from_bits(bytes) })
+                Ok(ConstantPoolEntry::ConstantFloat {
+                    bytes: f32::from_bits(bytes),
+                })
             }
             5 => {
                 // CONSTANT_Long
@@ -198,7 +237,9 @@ impl ClassFile {
             6 => {
                 // CONSTANT_Double
                 let bytes = cursor.read_u64::<BigEndian>()?;
-                Ok(ConstantPoolEntry::ConstantDouble { bytes: f64::from_bits(bytes) })
+                Ok(ConstantPoolEntry::ConstantDouble {
+                    bytes: f64::from_bits(bytes),
+                })
             }
             7 => {
                 // CONSTANT_Class
@@ -214,31 +255,46 @@ impl ClassFile {
                 // CONSTANT_Fieldref
                 let class_index = cursor.read_u16::<BigEndian>()?;
                 let name_and_type_index = cursor.read_u16::<BigEndian>()?;
-                Ok(ConstantPoolEntry::ConstantFieldref { class_index, name_and_type_index })
+                Ok(ConstantPoolEntry::ConstantFieldref {
+                    class_index,
+                    name_and_type_index,
+                })
             }
             10 => {
                 // CONSTANT_Methodref
                 let class_index = cursor.read_u16::<BigEndian>()?;
                 let name_and_type_index = cursor.read_u16::<BigEndian>()?;
-                Ok(ConstantPoolEntry::ConstantMethodref { class_index, name_and_type_index })
+                Ok(ConstantPoolEntry::ConstantMethodref {
+                    class_index,
+                    name_and_type_index,
+                })
             }
             11 => {
                 // CONSTANT_InterfaceMethodref
                 let class_index = cursor.read_u16::<BigEndian>()?;
                 let name_and_type_index = cursor.read_u16::<BigEndian>()?;
-                Ok(ConstantPoolEntry::ConstantInterfaceMethodref { class_index, name_and_type_index })
+                Ok(ConstantPoolEntry::ConstantInterfaceMethodref {
+                    class_index,
+                    name_and_type_index,
+                })
             }
             12 => {
                 // CONSTANT_NameAndType
                 let name_index = cursor.read_u16::<BigEndian>()?;
                 let descriptor_index = cursor.read_u16::<BigEndian>()?;
-                Ok(ConstantPoolEntry::ConstantNameAndType { name_index, descriptor_index })
+                Ok(ConstantPoolEntry::ConstantNameAndType {
+                    name_index,
+                    descriptor_index,
+                })
             }
             15 => {
                 // CONSTANT_MethodHandle
                 let reference_kind = cursor.read_u8()?;
                 let reference_index = cursor.read_u16::<BigEndian>()?;
-                Ok(ConstantPoolEntry::ConstantMethodHandle { reference_kind, reference_index })
+                Ok(ConstantPoolEntry::ConstantMethodHandle {
+                    reference_kind,
+                    reference_index,
+                })
             }
             16 => {
                 // CONSTANT_MethodType
@@ -249,7 +305,10 @@ impl ClassFile {
                 // CONSTANT_InvokeDynamic
                 let bootstrap_method_attr_index = cursor.read_u16::<BigEndian>()?;
                 let name_and_type_index = cursor.read_u16::<BigEndian>()?;
-                Ok(ConstantPoolEntry::ConstantInvokeDynamic { bootstrap_method_attr_index, name_and_type_index })
+                Ok(ConstantPoolEntry::ConstantInvokeDynamic {
+                    bootstrap_method_attr_index,
+                    name_and_type_index,
+                })
             }
             _ => Err(ParseError::InvalidConstantPoolTag(tag)),
         }
