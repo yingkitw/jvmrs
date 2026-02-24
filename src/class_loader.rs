@@ -1,5 +1,6 @@
 //! Class loading implementation for JVMRS
 
+use crate::class_cache::{read_from_cache, write_to_cache};
 use crate::class_file::ClassFile;
 use crate::error::{to_class_loading_error, ClassLoadingError, JvmError};
 use std::collections::HashMap;
@@ -11,6 +12,8 @@ pub struct ClassLoader {
     classes: HashMap<String, ClassFile>,
     /// Classpath directories
     classpath: Vec<PathBuf>,
+    /// Optional cache directory for fast binary format (.jvmc) - skip classpath search
+    cache_dir: Option<PathBuf>,
 }
 
 impl ClassLoader {
@@ -19,6 +22,7 @@ impl ClassLoader {
         ClassLoader {
             classes: HashMap::new(),
             classpath,
+            cache_dir: None,
         }
     }
 
@@ -27,7 +31,19 @@ impl ClassLoader {
         ClassLoader {
             classes: HashMap::new(),
             classpath: vec![PathBuf::from(".")],
+            cache_dir: None,
         }
+    }
+
+    /// Enable fast class loading from binary cache directory
+    pub fn with_cache_dir(mut self, cache_dir: PathBuf) -> Self {
+        self.cache_dir = Some(cache_dir);
+        self
+    }
+
+    /// Set cache directory for fast class loading
+    pub fn set_cache_dir(&mut self, cache_dir: Option<PathBuf>) {
+        self.cache_dir = cache_dir;
     }
 
     /// Load a class by name
@@ -37,6 +53,27 @@ impl ClassLoader {
             return Ok(());
         }
 
+        // Try fast path: load from binary cache if enabled
+        if let Some(ref cache_dir) = self.cache_dir {
+            if let Ok(Some(class_file)) = read_from_cache(cache_dir, class_name) {
+                let actual_class_name = class_file
+                    .get_class_name()
+                    .unwrap_or_else(|| class_name.to_string());
+                if actual_class_name != class_name {
+                    return Err(to_class_loading_error(ClassLoadingError::ClassFormatError(
+                        format!("Class name mismatch: expected {}, got {}", class_name, actual_class_name),
+                    )));
+                }
+                if let Some(super_class_name) = class_file.get_super_class_name() {
+                    if super_class_name != "java/lang/Object" {
+                        self.load_class(&super_class_name)?;
+                    }
+                }
+                self.classes.insert(class_name.to_string(), class_file);
+                return Ok(());
+            }
+        }
+
         // Convert class name to file path
         let class_file_name = format!("{}.class", class_name.replace('.', "/"));
 
@@ -44,7 +81,14 @@ impl ClassLoader {
         for classpath_dir in &self.classpath {
             let full_path = classpath_dir.join(&class_file_name);
             if full_path.exists() {
-                match ClassFile::from_file(&full_path) {
+                let bytes = std::fs::read(&full_path).map_err(|e| {
+                    to_class_loading_error(ClassLoadingError::ClassFormatError(format!(
+                        "Failed to read {}: {}",
+                        full_path.display(),
+                        e
+                    )))
+                })?;
+                match ClassFile::parse(&bytes) {
                     Ok(class_file) => {
                         let actual_class_name = class_file
                             .get_class_name()
@@ -67,17 +111,18 @@ impl ClassLoader {
                             }
                         }
 
+                        // Write to binary cache for future fast loading
+                        if let Some(ref cache_dir) = self.cache_dir {
+                            let _ = write_to_cache(cache_dir, class_name, &bytes);
+                        }
+
                         // Insert into cache
                         self.classes.insert(class_name.to_string(), class_file);
                         return Ok(());
                     }
                     Err(e) => {
                         return Err(to_class_loading_error(ClassLoadingError::ClassFormatError(
-                            format!(
-                                "Failed to parse class file {}: {:?}",
-                                full_path.display(),
-                                e
-                            ),
+                            format!("Failed to parse class file {}: {:?}", full_path.display(), e),
                         )));
                     }
                 }

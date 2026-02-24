@@ -2,14 +2,19 @@ use crate::class_file::{AttributeInfo, ClassFile, MethodInfo};
 use crate::class_loader::ClassLoader;
 use crate::debug::{debug_config_from_env, JvmDebugger};
 use crate::error::{to_runtime_error_enum, ClassLoadingError, JvmError, RuntimeError};
-use crate::jit::{CompilationLevel, JitManager, TieredCompilationConfig};
+use crate::jit::{JitManager, TieredCompilationConfig};
 use crate::memory::{Memory, StackFrame, Value};
 use crate::native::{init_builtins, NativeRegistry};
+use crate::profiler::{ProfileGuard, Profiler};
+use crate::deterministic::DeterministicConfig;
+use crate::security::Sanitizer;
+use crate::trace::TraceRecorder;
 use super::reflection::ReflectionApi;
 use log::info;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Result type for interpreter operations
 pub type InterpreterResult = Result<(), JvmError>;
@@ -38,6 +43,14 @@ pub struct Interpreter {
     jit_manager: Option<JitManager>,
     /// JIT compilation configuration
     jit_config: TieredCompilationConfig,
+    /// Optional profiler for flame graphs and hotspot detection
+    profiler: Option<Arc<Profiler>>,
+    /// Optional trace recorder for time-travel debugging
+    trace_recorder: Option<TraceRecorder>,
+    /// Optional security sanitizer for runtime instrumentation
+    sanitizer: Option<Arc<Sanitizer>>,
+    /// Optional deterministic execution config (fixed RNG, timestamps)
+    deterministic_config: Option<DeterministicConfig>,
 }
 
 /// Exception handler information
@@ -79,6 +92,10 @@ impl Interpreter {
             reflection_api,
             jit_manager,
             jit_config,
+            profiler: None,
+            trace_recorder: None,
+            sanitizer: None,
+            deterministic_config: None,
         }
     }
 
@@ -106,7 +123,11 @@ impl Interpreter {
             native_registry,
             reflection_api,
             jit_manager,
+            profiler: None,
             jit_config,
+            trace_recorder: None,
+            sanitizer: None,
+            deterministic_config: None,
         }
     }
 
@@ -133,7 +154,50 @@ impl Interpreter {
             reflection_api,
             jit_manager,
             jit_config,
+            profiler: None,
+            trace_recorder: None,
+            sanitizer: None,
+            deterministic_config: None,
         }
+    }
+
+    /// Enable deterministic execution (fixed RNG seed, reproducible timestamps)
+    pub fn set_deterministic(&mut self, config: Option<DeterministicConfig>) {
+        self.deterministic_config = config;
+    }
+
+    /// Enable profiling (for flame graphs and hotspot detection)
+    pub fn set_profiler(&mut self, profiler: Option<Arc<Profiler>>) {
+        self.profiler = profiler;
+    }
+
+    /// Get profiler reference
+    pub fn profiler(&self) -> Option<&Arc<Profiler>> {
+        self.profiler.as_ref()
+    }
+
+    /// Enable trace recording for time-travel debugging
+    pub fn set_trace_recorder(&mut self, mut recorder: Option<TraceRecorder>) {
+        if let Some(ref mut r) = recorder {
+            r.set_enabled(true);
+        }
+        self.trace_recorder = recorder;
+    }
+
+    /// Enable security sanitizer for runtime instrumentation
+    pub fn set_sanitizer(&mut self, sanitizer: Option<Arc<Sanitizer>>) {
+        self.memory.set_sanitizer(sanitizer.clone());
+        self.sanitizer = sanitizer;
+    }
+
+    /// Set class cache directory for fast loading (binary .jvmc format)
+    pub fn set_class_cache_dir(&mut self, path: Option<PathBuf>) {
+        self.class_loader.set_cache_dir(path);
+    }
+
+    /// Get trace recorder reference (for exporting after execution)
+    pub fn trace_recorder(&self) -> Option<&TraceRecorder> {
+        self.trace_recorder.as_ref()
     }
 
     /// Check if JIT is enabled
@@ -504,6 +568,11 @@ impl Interpreter {
             .unwrap_or_else(|| "unknown".to_string());
         let class_name = class.get_class_name().unwrap_or("Unknown".to_string());
 
+        // Profiler guard - records method entry/exit for flame graphs
+        let _profile_guard = self.profiler.as_ref().map(|p| {
+            ProfileGuard::new(p.as_ref(), &class_name, &method_name)
+        });
+
         // Record method invocation for hot method detection
         if let Some(jit_manager) = &mut self.jit_manager {
             // Check if we should compile this method
@@ -614,7 +683,19 @@ impl Interpreter {
         // Execute bytecode instructions in the new frame
         while frame.pc < code.len() {
             let opcode = code[frame.pc];
+            let pc_before = frame.pc;
             frame.pc += 1;
+
+            // Record for time-travel debugging
+            if let Some(ref mut tr) = self.trace_recorder {
+                tr.record(
+                    pc_before,
+                    opcode,
+                    &format!("{}.{}", class_name, method_name),
+                    frame.stack.len(),
+                    frame.locals.len(),
+                );
+            }
 
             // Log instruction before execution
             self.debugger.log_instruction(&frame, &class_clone, opcode);

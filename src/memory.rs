@@ -1,6 +1,8 @@
 use crate::debug::JvmDebugger;
 use crate::error::{to_runtime_error_enum, JvmError, MemoryError, RuntimeError};
+use crate::security::Sanitizer;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// Represents a value in the JVM
 #[derive(Debug, Clone, PartialEq)]
@@ -156,6 +158,8 @@ pub struct Heap {
     marked: HashSet<u32>,
     /// Debugger for logging
     debugger: Option<JvmDebugger>,
+    /// Optional security sanitizer for bounds/null checks
+    sanitizer: Option<Arc<Sanitizer>>,
 }
 
 /// Monitor for object synchronization
@@ -324,6 +328,7 @@ impl Heap {
             next_addr: 1,
             marked: HashSet::new(),
             debugger: None,
+            sanitizer: None,
         }
     }
 
@@ -335,7 +340,13 @@ impl Heap {
             next_addr: 1,
             marked: HashSet::new(),
             debugger: Some(debugger),
+            sanitizer: None,
         }
+    }
+
+    /// Set security sanitizer for runtime instrumentation
+    pub fn set_sanitizer(&mut self, sanitizer: Option<Arc<Sanitizer>>) {
+        self.sanitizer = sanitizer;
     }
 
     /// Allocate a new object
@@ -552,6 +563,9 @@ impl Heap {
 
     /// Get array length
     pub fn array_length(&self, addr: u32) -> Result<usize, MemoryError> {
+        if let Some(ref s) = self.sanitizer {
+            s.check_null(Some(addr)).map_err(|e| MemoryError::InvalidArrayOperation(e))?;
+        }
         self.arrays
             .get(&addr)
             .map(|array| match array {
@@ -570,11 +584,27 @@ impl Heap {
 
     /// Get array element
     pub fn array_get(&self, addr: u32, index: usize) -> Result<Value, MemoryError> {
+        if let Some(ref s) = self.sanitizer {
+            s.check_null(Some(addr)).map_err(|e| MemoryError::InvalidArrayOperation(e))?;
+        }
         let array = self
             .arrays
             .get(&addr)
             .ok_or_else(|| MemoryError::InvalidHeapAddress(addr))?;
-
+        let len = match array {
+            HeapArray::IntArray(v) => v.len(),
+            HeapArray::FloatArray(v) => v.len(),
+            HeapArray::LongArray(v) => v.len(),
+            HeapArray::DoubleArray(v) => v.len(),
+            HeapArray::ReferenceArray(v) => v.len(),
+            HeapArray::ByteArray(v) => v.len(),
+            HeapArray::CharArray(v) => v.len(),
+            HeapArray::ShortArray(v) => v.len(),
+            HeapArray::BooleanArray(v) => v.len(),
+        };
+        if let Some(ref s) = self.sanitizer {
+            s.check_array_bounds(index, len).map_err(|e| MemoryError::InvalidArrayOperation(e))?;
+        }
         match array {
             HeapArray::IntArray(v) => v
                 .get(index)
@@ -617,11 +647,27 @@ impl Heap {
 
     /// Set array element
     pub fn array_set(&mut self, addr: u32, index: usize, value: Value) -> Result<(), MemoryError> {
+        if let Some(ref s) = self.sanitizer {
+            s.check_null(Some(addr)).map_err(|e| MemoryError::InvalidArrayOperation(e))?;
+        }
         let array = self
             .arrays
             .get_mut(&addr)
             .ok_or_else(|| MemoryError::InvalidHeapAddress(addr))?;
-
+        let len = match array {
+            HeapArray::IntArray(v) => v.len(),
+            HeapArray::FloatArray(v) => v.len(),
+            HeapArray::LongArray(v) => v.len(),
+            HeapArray::DoubleArray(v) => v.len(),
+            HeapArray::ReferenceArray(v) => v.len(),
+            HeapArray::ByteArray(v) => v.len(),
+            HeapArray::CharArray(v) => v.len(),
+            HeapArray::ShortArray(v) => v.len(),
+            HeapArray::BooleanArray(v) => v.len(),
+        };
+        if let Some(ref s) = self.sanitizer {
+            s.check_array_bounds(index, len).map_err(|e| MemoryError::InvalidArrayOperation(e))?;
+        }
         match array {
             HeapArray::IntArray(v) => {
                 if index >= v.len() {
@@ -820,6 +866,11 @@ impl Memory {
     /// Set debugger for heap (useful if memory was created before debugger)
     pub fn set_debugger(&mut self, debugger: JvmDebugger) {
         self.heap = Heap::with_debugger(debugger);
+    }
+
+    /// Set security sanitizer for heap (runtime instrumentation)
+    pub fn set_sanitizer(&mut self, sanitizer: Option<Arc<Sanitizer>>) {
+        self.heap.set_sanitizer(sanitizer);
     }
 
     /// Get a static field value

@@ -1,10 +1,18 @@
 mod allocator;
+mod aop;
+mod aot_compiler;
+mod class_cache;
 mod class_file;
 mod class_loader;
-mod aot_compiler;
+mod cloud;
 mod cranelift_jit;
 mod debug;
+mod deterministic;
 mod error;
+mod hot_reload;
+mod profiler;
+mod security;
+mod trace;
 mod gc;
 mod interpreter;
 mod jit;
@@ -30,6 +38,7 @@ use debug::init_logging;
 use interpreter::Interpreter;
 use jit::AotCompiler;
 use log::info;
+use std::sync::Arc;
 
 use std::env;
 use std::path::Path;
@@ -43,10 +52,17 @@ fn print_usage(program_name: &str) {
     eprintln!("  {} [OPTIONS] <classfile>", program_name);
     eprintln!();
     eprintln!("OPTIONS:");
-    eprintln!("  --aot <output>        Enable AOT compilation mode, output to <output>");
+    eprintln!("  --aot <output>        AOT compile to object file");
     eprintln!("  --no-jit              Disable JIT compilation");
-    eprintln!("  --jit-threshold <n>   Set JIT compilation threshold (default: 100)");
-    eprintln!("  --llvm                Generate LLVM IR instead of executing");
+    eprintln!("  --jit-threshold <n>   JIT threshold (default: 100)");
+    eprintln!("  --profile             Enable profiler (flame graph data)");
+    eprintln!("  --profile-output <f>  Write flame graph to file (use with --profile)");
+    eprintln!("  --trace               Enable execution trace (time-travel debugging)");
+    eprintln!("  --trace-output <f>   Write trace to file (use with --trace)");
+    eprintln!("  --class-cache-dir <d> Use binary cache for fast class loading (.jvmc)");
+    eprintln!("  --deterministic       Enable deterministic execution (fixed RNG, timestamps)");
+    eprintln!("  --sanitizer           Enable security instrumentation (bounds/null checks)");
+    eprintln!("  --llvm                Emit LLVM IR to stdout");
     eprintln!("  --help, -h            Print this help message");
     eprintln!();
     eprintln!("ENVIRONMENT VARIABLES:");
@@ -83,6 +99,13 @@ fn main() {
     let mut disable_jit = false;
     let mut jit_threshold: Option<u64> = None;
     let mut generate_llvm = false;
+    let mut enable_profile = false;
+    let mut profile_output: Option<String> = None;
+    let mut enable_trace = false;
+    let mut trace_output: Option<String> = None;
+    let mut class_cache_dir: Option<String> = None;
+    let mut enable_deterministic = false;
+    let mut enable_sanitizer = false;
     let mut class_name: Option<String> = None;
 
     let mut i = 1;
@@ -112,6 +135,49 @@ fn main() {
             }
             "--llvm" => {
                 generate_llvm = true;
+                i += 1;
+            }
+            "--profile" => {
+                enable_profile = true;
+                i += 1;
+            }
+            "--profile-output" => {
+                if i + 1 < args.len() {
+                    profile_output = Some(args[i + 1].clone());
+                    i += 2;
+                } else {
+                    eprintln!("Error: --profile-output requires a path");
+                    process::exit(1);
+                }
+            }
+            "--trace" => {
+                enable_trace = true;
+                i += 1;
+            }
+            "--trace-output" => {
+                if i + 1 < args.len() {
+                    trace_output = Some(args[i + 1].clone());
+                    i += 2;
+                } else {
+                    eprintln!("Error: --trace-output requires a path");
+                    process::exit(1);
+                }
+            }
+            "--class-cache-dir" => {
+                if i + 1 < args.len() {
+                    class_cache_dir = Some(args[i + 1].clone());
+                    i += 2;
+                } else {
+                    eprintln!("Error: --class-cache-dir requires a path");
+                    process::exit(1);
+                }
+            }
+            "--deterministic" => {
+                enable_deterministic = true;
+                i += 1;
+            }
+            "--sanitizer" => {
+                enable_sanitizer = true;
                 i += 1;
             }
             "--help" | "-h" => {
@@ -246,6 +312,29 @@ fn main() {
     // Normal execution mode
     let mut interpreter = Interpreter::new();
 
+    if enable_profile {
+        interpreter.set_profiler(Some(Arc::new(profiler::Profiler::new())));
+        info!("Profiling enabled");
+    }
+    if enable_trace {
+        interpreter.set_trace_recorder(Some(trace::TraceRecorder::new()));
+        info!("Trace recording enabled");
+    }
+    if let Some(ref dir) = class_cache_dir {
+        interpreter.set_class_cache_dir(Some(std::path::PathBuf::from(dir)));
+        info!("Class cache directory: {}", dir);
+    }
+    if enable_deterministic {
+        interpreter.set_deterministic(Some(deterministic::DeterministicConfig::default()));
+        info!("Deterministic mode enabled");
+    }
+    if enable_sanitizer {
+        interpreter.set_sanitizer(Some(Arc::new(security::Sanitizer::new(
+            security::SecurityConfig::default(),
+        ))));
+        info!("Security sanitizer enabled");
+    }
+
     // Configure JIT
     if disable_jit {
         interpreter.set_jit_enabled(false);
@@ -272,5 +361,34 @@ fn main() {
     if let Err(e) = interpreter.run_main(class_name_without_ext) {
         eprintln!("Error running main method: {}", e);
         process::exit(1);
+    }
+
+    // Print profiler results if enabled
+    if enable_profile {
+        if let Some(p) = interpreter.profiler() {
+            println!("\n--- Profiler Summary ---\n{}", p.summary());
+            if let Some(ref path) = profile_output {
+                if let Err(e) = p.write_flame_graph(Path::new(path)) {
+                    eprintln!("Warning: could not write flame graph: {}", e);
+                } else {
+                    println!("\nFlame graph data written to {}", path);
+                }
+            }
+        }
+    }
+
+    // Write trace if enabled
+    if enable_trace {
+        if let Some(tr) = interpreter.trace_recorder() {
+            if let Some(ref path) = trace_output {
+                if let Err(e) = tr.write_to_file(Path::new(path)) {
+                    eprintln!("Warning: could not write trace: {}", e);
+                } else {
+                    println!("\nTrace written to {} ({} steps)", path, tr.step_count());
+                }
+            } else {
+                println!("\n--- Trace ({} steps) ---\n{}", tr.step_count(), tr.export_text());
+            }
+        }
     }
 }
