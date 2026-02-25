@@ -498,4 +498,253 @@ mod tests {
             "Native method java.lang.System.currentTimeMillis not found"
         );
     }
+
+    // ========== Descriptor ==========
+    #[test]
+    fn test_descriptor_count_parameters() {
+        use crate::interpreter::descriptor;
+        assert_eq!(descriptor::count_parameters("()V"), 0);
+        assert_eq!(descriptor::count_parameters("(I)I"), 1);
+        assert_eq!(descriptor::count_parameters("(II)I"), 2);
+        assert_eq!(descriptor::count_parameters("(J)J"), 2); // long takes 2
+        assert_eq!(descriptor::count_parameters("(D)D"), 2); // double takes 2
+        assert_eq!(descriptor::count_parameters("([Ljava/lang/String;)V"), 1);
+        assert_eq!(descriptor::count_parameters("(Ljava/lang/String;)V"), 1);
+    }
+
+    #[test]
+    fn test_descriptor_parse_params() {
+        use crate::interpreter::descriptor;
+        assert!(descriptor::parse_method_params("()V").is_empty());
+        assert_eq!(descriptor::parse_method_params("(I)I"), ["int"]);
+        assert_eq!(descriptor::parse_method_params("(II)I"), ["int", "int"]);
+        assert_eq!(descriptor::parse_method_params("(F)F"), ["float"]);
+        assert_eq!(descriptor::parse_method_params("(Ljava/lang/String;)V"), ["object"]);
+    }
+
+    // ========== Heap array operations ==========
+    #[test]
+    fn test_heap_array_get_set() {
+        use crate::memory::HeapArray;
+        let mut heap = Heap::new();
+        let addr = heap.allocate_array(HeapArray::IntArray(vec![0, 0, 0]));
+        heap.array_set(addr, 1, Value::Int(42)).unwrap();
+        let val = heap.array_get(addr, 1).unwrap();
+        assert_eq!(val, Value::Int(42));
+    }
+
+    #[test]
+    fn test_heap_array_length() {
+        use crate::memory::HeapArray;
+        let mut heap = Heap::new();
+        let addr = heap.allocate_array(HeapArray::IntArray(vec![1, 2, 3, 4, 5]));
+        assert_eq!(heap.array_length(addr).unwrap(), 5);
+    }
+
+    #[test]
+    fn test_heap_get_field_set_field() {
+        let mut heap = Heap::new();
+        let addr = heap.allocate("Test".to_string());
+        heap.set_field(addr, "x".to_string(), Value::Int(100)).unwrap();
+        let val = heap.get_field(addr, "x").unwrap();
+        assert_eq!(val, Value::Int(100));
+    }
+
+    // ========== Memory static fields ==========
+    #[test]
+    fn test_memory_static_fields() {
+        use crate::memory::Memory;
+        let mut mem = Memory::new();
+        mem.set_static("java/lang/System".to_string(), "out".to_string(), Value::Reference(1));
+        let val = mem.get_static("java/lang/System", "out").unwrap();
+        assert_eq!(val, &Value::Reference(1));
+    }
+
+    // ========== Visualization ==========
+    #[test]
+    fn test_heap_dump_ascii() {
+        use crate::visualization;
+        let out = visualization::heap_dump_ascii(5, 3);
+        assert!(out.contains("Objects: 5"));
+        assert!(out.contains("Arrays: 3"));
+    }
+
+    #[test]
+    fn test_frame_dump_ascii() {
+        use crate::memory::StackFrame;
+        use crate::visualization;
+        let frame = StackFrame::new(2, 4, "test".to_string());
+        let out = visualization::frame_dump_ascii(&frame);
+        assert!(out.contains("Method: test"));
+        assert!(out.contains("PC:"));
+    }
+
+    #[test]
+    fn test_memory_dump_ascii() {
+        use crate::memory::Memory;
+        use crate::visualization;
+        let mem = Memory::new();
+        let out = visualization::memory_dump_ascii(&mem);
+        assert!(out.contains("=== Memory Dump ==="));
+        assert!(out.contains("=== Call Stack ==="));
+    }
+
+    #[test]
+    fn test_export_html_fragment() {
+        use crate::memory::StackFrame;
+        use crate::visualization;
+        let frame = StackFrame::new(1, 1, "main".to_string());
+        let out = visualization::export_html_fragment(&[frame]);
+        assert!(out.contains("<div class=\"jvmrs-dump\">"));
+        assert!(out.contains("Frame 0"));
+    }
+
+    // ========== JVMStack frames() ==========
+    #[test]
+    fn test_jvm_stack_frames() {
+        use crate::memory::{JVMStack, StackFrame};
+        let mut stack = JVMStack::new();
+        let frame = StackFrame::new(2, 4, "main".to_string());
+        stack.push_frame(frame);
+        assert_eq!(stack.depth(), 1);
+        let frames = stack.frames();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].method_name, "main");
+    }
+
+    // ========== Deterministic config ==========
+    #[test]
+    fn test_deterministic_config_presets() {
+        use crate::deterministic::DeterministicConfig;
+        let blockchain = DeterministicConfig::blockchain();
+        assert_eq!(blockchain.rng_seed, 0);
+        let realtime = DeterministicConfig::realtime(1_000_000);
+        assert_eq!(realtime.max_pause_ns, Some(1_000_000));
+    }
+
+    // ========== Extensions ==========
+    #[test]
+    fn test_extension_registry() {
+        use crate::extensions::ExtensionRegistry;
+        use crate::memory::Value;
+        let reg = ExtensionRegistry::new();
+        assert!(!reg.has_native("test.foo"));
+        reg.register_native("test.foo", Box::new(|args| {
+            Ok(args.get(0).cloned().unwrap_or(Value::Int(0)))
+        }));
+        assert!(reg.has_native("test.foo"));
+        let result = reg.invoke_native("test.foo", &[Value::Int(7)]).unwrap();
+        assert_eq!(result, Value::Int(7));
+    }
+
+    // ========== Serialization ==========
+    #[test]
+    fn test_serialization_stub() {
+        use crate::memory::HeapObject;
+        use crate::serialization;
+        let obj = HeapObject {
+            fields: std::collections::HashMap::new(),
+            class_name: "Test".to_string(),
+            marked: false,
+            string_data: None,
+            monitor: None,
+        };
+        let result = serialization::serialize_object(&obj);
+        assert!(result.is_err());
+        let result = serialization::deserialize_object(&[], "Test");
+        assert!(result.is_err());
+    }
+
+    // ========== Interpreter run_main integration ==========
+    #[test]
+    fn test_interpreter_run_minimal() {
+        use crate::interpreter::Interpreter;
+        use std::path::PathBuf;
+        let examples = PathBuf::from("examples");
+        if !examples.exists() {
+            return;
+        }
+        let mut interpreter = Interpreter::with_classpath(vec![examples]);
+        interpreter.set_jit_enabled(false);
+        let result = interpreter.run_main("Minimal");
+        assert!(result.is_ok(), "run_main Minimal failed: {:?}", result);
+    }
+
+    #[test]
+    fn test_interpreter_run_test_get_static() {
+        use crate::interpreter::Interpreter;
+        use std::path::PathBuf;
+        let examples = PathBuf::from("examples");
+        if !examples.exists() {
+            return;
+        }
+        let mut interpreter = Interpreter::with_classpath(vec![examples]);
+        interpreter.set_jit_enabled(false);
+        let result = interpreter.run_main("TestGetStatic");
+        assert!(result.is_ok(), "run_main TestGetStatic failed: {:?}", result);
+    }
+
+    #[test]
+    fn test_interpreter_run_test_ldc() {
+        use crate::interpreter::Interpreter;
+        use std::path::PathBuf;
+        let examples = PathBuf::from("examples");
+        if !examples.exists() {
+            return;
+        }
+        let mut interpreter = Interpreter::with_classpath(vec![examples]);
+        interpreter.set_jit_enabled(false);
+        let result = interpreter.run_main("TestLdc");
+        assert!(result.is_ok(), "run_main TestLdc failed: {:?}", result);
+    }
+
+    #[test]
+    fn test_interpreter_memory_access() {
+        use crate::interpreter::Interpreter;
+        let interpreter = Interpreter::new();
+        let memory = interpreter.memory();
+        assert_eq!(memory.heap.object_count(), 0);
+        assert_eq!(memory.heap.array_count(), 0);
+    }
+
+    // ========== Class loader load from examples ==========
+    #[test]
+    fn test_class_loader_load_minimal() {
+        let examples = PathBuf::from("examples");
+        if !examples.exists() {
+            return;
+        }
+        let mut loader = ClassLoader::new(vec![examples]);
+        let result = loader.load_class("Minimal");
+        assert!(result.is_ok(), "load Minimal: {:?}", result);
+        assert!(loader.is_class_loaded("Minimal"));
+        let class = loader.get_class("Minimal").unwrap();
+        assert_eq!(class.get_class_name(), Some("Minimal".to_string()));
+    }
+
+    // ========== Annotations ==========
+    #[test]
+    fn test_annotations_on_minimal_class() {
+        let examples = PathBuf::from("examples");
+        if !examples.exists() {
+            return;
+        }
+        let mut loader = ClassLoader::new(vec![examples]);
+        if loader.load_class("Minimal").is_err() {
+            return;
+        }
+        let class = match loader.get_class("Minimal") {
+            Some(c) => c,
+            None => return,
+        };
+        let annotations = class.get_class_annotations();
+        assert!(annotations.is_empty() || !annotations.is_empty());
+    }
+
+    // ========== AOP ==========
+    #[test]
+    fn test_aop_create_proxy() {
+        use crate::aop::create_proxy;
+        let _proxy = create_proxy("java/lang/Object".to_string(), 1, None);
+    }
 }

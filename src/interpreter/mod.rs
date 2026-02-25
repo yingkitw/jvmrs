@@ -7,7 +7,7 @@
 //! - `dispatch` - Instruction dispatch
 //! - `builtins` - Native builtins (println, invokedynamic)
 
-mod descriptor;
+pub mod descriptor;
 mod utils;
 
 mod invocation;
