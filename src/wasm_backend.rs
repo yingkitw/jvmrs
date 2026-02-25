@@ -60,6 +60,15 @@ impl WasmGenerator {
                     0x60 => {
                         body.push(Instruction::I32Add);
                     }
+                    0x64 => {
+                        body.push(Instruction::I32Sub);
+                    }
+                    0x68 => {
+                        body.push(Instruction::I32Mul);
+                    }
+                    0x6c => {
+                        body.push(Instruction::I32DivS);
+                    }
                     0xac => {
                         body.push(Instruction::End);
                         saw_ireturn = true;

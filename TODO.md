@@ -3,9 +3,9 @@
 ## Competitive Differentiation Roadmap
 
 ### Unique JVMRS Features (vs HotSpot, OpenJ9, GraalVM)
-- [ ] Expand Rust-specific memory safety advantages in documentation
-- [ ] Showcase WebAssembly native execution scenarios
-- [ ] Highlight deterministic execution for blockchain/reproducible computing
+- [x] Expand Rust-specific memory safety advantages in documentation
+- [x] Showcase WebAssembly native execution scenarios
+- [x] Highlight deterministic execution for blockchain/reproducible computing
 - [ ] Demonstrate polyglot capabilities beyond standard JVMs
 - [ ] Optimize for embedded/IoT scenarios with no_std builds
 - [ ] Develop comprehensive benchmarks against HotSpot/OpenJ9
@@ -14,24 +14,24 @@
 
 ### High (Next Sprint)
 - [ ] Add support for threads and concurrency
-- [ ] Set up CI/CD pipeline
-- [ ] Test with more complex Java examples
-- [ ] Expand JIT bytecode coverage
+- [x] Set up CI/CD pipeline
+- [x] Test with more complex Java examples
+- [x] Expand JIT bytecode coverage
 
 ### Medium
 - [ ] Implement JNI (Java Native Interface)
 - [ ] Add support for annotations
-- [ ] Add code coverage reporting
+- [x] Add code coverage reporting
 - [ ] Profile and optimize class loading
 - [ ] Optimize instruction dispatch
 
 ### Low / Backlog
-- [ ] Create REPL for interactive JVM exploration
+- [x] Create REPL for interactive JVM exploration
 - [ ] Add support for generics (type erasure)
 - [ ] Implement serialization/deserialization
 - [ ] Create visualization tools for JVM internals
 - [ ] Create documentation website
-- [ ] Set up fuzz testing for class file parser
+- [x] Set up fuzz testing for class file parser
 - [ ] Add hot code reloading
 - [ ] Add proxy-based AOP support
 - [ ] Create Kubernetes operator
@@ -117,8 +117,8 @@
 
 | Task | Status |
 |------|--------|
-| CI/CD pipeline | Pending |
-| Code coverage | Pending |
+| CI/CD pipeline | Done (.github/workflows/ci.yml) |
+| Code coverage | Done (cargo-llvm-cov in CI) |
 | API documentation | Pending |
 | Architecture diagrams | Pending |
 

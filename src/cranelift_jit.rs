@@ -179,6 +179,27 @@ impl CraneliftJitBackend {
                         stack.push(builder.ins().iadd(a, b));
                     }
                 }
+                0x64 => {
+                    if stack.len() >= 2 {
+                        let b = stack.pop().unwrap();
+                        let a = stack.pop().unwrap();
+                        stack.push(builder.ins().isub(a, b));
+                    }
+                }
+                0x68 => {
+                    if stack.len() >= 2 {
+                        let b = stack.pop().unwrap();
+                        let a = stack.pop().unwrap();
+                        stack.push(builder.ins().imul(a, b));
+                    }
+                }
+                0x6c => {
+                    if stack.len() >= 2 {
+                        let b = stack.pop().unwrap();
+                        let a = stack.pop().unwrap();
+                        stack.push(builder.ins().sdiv(a, b));
+                    }
+                }
                 0xac => {
                     let result = stack.pop().unwrap_or_else(|| builder.ins().iconst(i32_type, 0));
                     builder.ins().call(push_fn_ref, &[frame_param, result]);

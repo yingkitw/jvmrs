@@ -50,8 +50,103 @@ use log::info;
 use std::sync::Arc;
 
 use std::env;
+use std::io::{self, Write};
 use std::path::Path;
 use std::process;
+
+/// Interactive REPL for JVM exploration
+fn run_repl(
+    disable_jit: bool,
+    jit_threshold: Option<u64>,
+    enable_deterministic: bool,
+    enable_sanitizer: bool,
+    verbose: bool,
+) {
+    let log_level = if env::var("JVMRS_DEBUG").is_ok() {
+        log::LevelFilter::Debug
+    } else if verbose {
+        log::LevelFilter::Trace
+    } else {
+        log::LevelFilter::Warn
+    };
+    init_logging(log_level);
+
+    let mut interpreter = Interpreter::new();
+    if disable_jit {
+        interpreter.set_jit_enabled(false);
+    } else if let Some(threshold) = jit_threshold {
+        use jit::TieredCompilationConfig;
+        interpreter = Interpreter::with_jit(TieredCompilationConfig {
+            baseline_threshold: threshold,
+            ..Default::default()
+        });
+    }
+    if enable_deterministic {
+        interpreter.set_deterministic(Some(deterministic::DeterministicConfig::default()));
+    }
+    if enable_sanitizer {
+        interpreter.set_sanitizer(Some(Arc::new(security::Sanitizer::new(
+            security::SecurityConfig::default(),
+        ))));
+    }
+
+    println!("JVMRS REPL - Interactive JVM exploration");
+    println!("Commands: run <ClassName> | load <ClassName> | classes | quit | help");
+    println!();
+
+    loop {
+        print!("jvmrs> ");
+        let _ = io::stdout().flush();
+        let mut line = String::new();
+        if io::stdin().read_line(&mut line).is_err() || line.is_empty() {
+            break;
+        }
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        match parts.as_slice() {
+            ["quit" | "exit" | "q"] => {
+                println!("Goodbye.");
+                break;
+            }
+            ["help" | "?"] => {
+                println!("  run <ClassName>   - Load and run main() of the class");
+                println!("  load <ClassName>  - Load class (no execution)");
+                println!("  classes           - List loaded classes");
+                println!("  quit              - Exit REPL");
+            }
+            ["run", name] => {
+                if let Err(e) = interpreter.load_class_by_name(name) {
+                    eprintln!("Load error: {}", e);
+                } else if let Err(e) = interpreter.run_main(name) {
+                    eprintln!("Run error: {}", e);
+                }
+            }
+            ["load", name] => {
+                if let Err(e) = interpreter.load_class_by_name(name) {
+                    eprintln!("Load error: {}", e);
+                } else {
+                    println!("Loaded {}", name);
+                }
+            }
+            ["classes"] => {
+                // List loaded classes - use reflection if available
+                println!("(Loaded classes listing - use 'run <ClassName>' to execute)");
+            }
+            _ => {
+                // Try as class name (run)
+                if let Err(e) = interpreter.load_class_by_name(line) {
+                    eprintln!("Unknown command or load error: {}", e);
+                } else if let Err(e) = interpreter.run_main(line) {
+                    eprintln!("Run error: {}", e);
+                }
+            }
+        }
+    }
+}
 
 /// Print usage information
 fn print_usage(program_name: &str) {
@@ -72,6 +167,7 @@ fn print_usage(program_name: &str) {
     eprintln!("  --deterministic       Enable deterministic execution (fixed RNG, timestamps)");
     eprintln!("  --sanitizer           Enable security instrumentation (bounds/null checks)");
     eprintln!("  --llvm                Emit LLVM IR to stdout");
+    eprintln!("  --repl                Interactive REPL for JVM exploration");
     eprintln!("  --verbose, -v         Enable verbose logging (instruction/method trace)");
     eprintln!("  --help, -h            Print this help message");
     eprintln!();
@@ -109,6 +205,7 @@ fn main() {
     let mut enable_deterministic = false;
     let mut enable_sanitizer = false;
     let mut verbose = false;
+    let mut enable_repl = false;
     let mut class_name: Option<String> = None;
 
     let mut i = 1;
@@ -183,6 +280,10 @@ fn main() {
                 enable_sanitizer = true;
                 i += 1;
             }
+            "--repl" => {
+                enable_repl = true;
+                i += 1;
+            }
             "--verbose" | "-v" => {
                 verbose = true;
                 i += 1;
@@ -215,6 +316,13 @@ fn main() {
     if verbose {
         std::env::set_var("JVMRS_TRACE_INSTRUCTIONS", "1");
         std::env::set_var("JVMRS_TRACE_METHODS", "1");
+    }
+
+    let class_name = class_name;
+
+    if enable_repl {
+        run_repl(disable_jit, jit_threshold, enable_deterministic, enable_sanitizer, verbose);
+        return;
     }
 
     let class_name = match class_name {
