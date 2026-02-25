@@ -273,7 +273,7 @@ pub fn init_builtins(registry: &mut NativeRegistry) {
                     match &args[0] {
                         Value::Reference(addr) => {
                             if let Some(obj) = memory.heap.get_object(*addr) {
-                                if let Some(string_data) = &obj.string_data {
+                                if let Some(string_data) = obj.string_data.as_ref() {
                                     // Simple hash code implementation
                                     let mut hash: i32 = 0;
                                     for c in string_data.chars() {

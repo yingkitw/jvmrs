@@ -206,7 +206,7 @@ impl GenerationalHeap {
         let mut refs = Vec::new();
         if let Some(gen_obj) = self.get_gen_object(addr) {
             for value in gen_obj.obj.fields.values() {
-                if let Some(ref_addr) = value.as_reference() {
+                if let Some(ref_addr) = Value::as_reference(value) {
                     refs.push(ref_addr);
                 }
             }

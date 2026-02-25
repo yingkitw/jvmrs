@@ -283,15 +283,15 @@ pub trait Debugger {
 ### Milestone 3: Advanced Features
 - [x] Inheritance and polymorphism
 - [x] Interfaces
-- [ ] Reflection basics
-- [ ] Native method interface
+- [x] Reflection basics
+- [x] Native method interface
 
 ### Milestone 4: Optimization (Partial)
 - [x] JIT compilation (Cranelift, tiered)
 - [x] AOT compilation (cranelift-object)
 - [ ] Memory optimizations
 - [ ] Performance tuning
-- [ ] Benchmark suite
+- [x] Benchmark suite
 
 ## Testing Strategy
 

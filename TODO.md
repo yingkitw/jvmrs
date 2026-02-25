@@ -1,150 +1,129 @@
 # TODO - JVMRS Project
 
-## High Priority
-- [x] Implement missing JVM opcodes (current coverage ~60% - added array ops, string ops, ldc_w, ldc2_w, etc.)
-- [x] Add proper error handling with custom error types
-- [x] Implement garbage collection (basic mark-and-sweep)
-- [x] Add support for arrays (newarray, anewarray, arraylength, iaload, iastore, etc.)
-- [x] Add support for strings and string operations (string objects, ldc for strings, string concatenation)
-- [x] Implement class inheritance and polymorphism (method resolution through class hierarchy)
-- [x] Add support for interfaces (interface method resolution, invokeinterface)
+## Competitive Differentiation Roadmap
 
-## Medium Priority
-- [x] Add unit tests for each module (5 tests implemented)
-- [x] Implement proper class loading from classpath
-- [x] Add support for exceptions and exception handling (basic implementation with division by zero and array bounds exceptions)
-- [ ] Implement native method interface
-- [ ] Add support for synchronization (monitors)
-- [ ] Implement reflection API basics
-- [ ] Add logging/debugging capabilities
-- [ ] Create benchmark suite
+### Unique JVMRS Features (vs HotSpot, OpenJ9, GraalVM)
+- [ ] Expand Rust-specific memory safety advantages in documentation
+- [ ] Showcase WebAssembly native execution scenarios
+- [ ] Highlight deterministic execution for blockchain/reproducible computing
+- [ ] Demonstrate polyglot capabilities beyond standard JVMs
+- [ ] Optimize for embedded/IoT scenarios with no_std builds
+- [ ] Develop comprehensive benchmarks against HotSpot/OpenJ9
 
-## Low Priority
+## Active Priorities
+
+### High (Next Sprint)
 - [ ] Add support for threads and concurrency
+- [ ] Set up CI/CD pipeline
+- [ ] Test with more complex Java examples
+- [ ] Expand JIT bytecode coverage
+
+### Medium
 - [ ] Implement JNI (Java Native Interface)
 - [ ] Add support for annotations
-- [ ] Create REPL for interactive JVM exploration
-- [ ] Add support for generics
-- [ ] Implement serialization/deserialization
-- [ ] Create visualization tools for JVM internals
-
-## Infrastructure
-- [ ] Set up CI/CD pipeline
 - [ ] Add code coverage reporting
-- [ ] Create documentation website
-- [ ] Add performance profiling tools
-- [ ] Set up fuzz testing for class file parser
-
-## Testing
-- [ ] Test with more complex Java examples
-- [ ] Test edge cases in class file parsing
-- [ ] Test memory management under load
-- [ ] Test instruction interpreter correctness
-- [ ] Test compatibility with standard Java libraries
-
-## Documentation
-- [ ] Write API documentation
-- [ ] Create architecture diagrams
-- [ ] Add inline code comments
-
-## Performance Optimization
 - [ ] Profile and optimize class loading
 - [ ] Optimize instruction dispatch
-- [x] Implement JIT compilation (Cranelift)
-- [ ] Expand JIT bytecode coverage
-- [ ] Optimize memory allocation
-- [ ] Add caching for frequently used classes
 
-## Features to Research
-- [x] Investigate WebAssembly compilation target (WASM backend implemented)
-- [ ] Research cross-platform compatibility
-- [ ] Explore integration with other languages
-- [ ] Research security implications and sandboxing
-
----
-
-# Unique Capabilities & Differentiators
-
-This section outlines features that make jvmrs unique compared to other JVM implementations (HotSpot, OpenJ9, GraalVM, etc.), leveraging Rust's strengths.
-
-## Performance & Compilation
-
-### Core Execution
-- [x] Implement JIT compiler using Cranelift for native code generation
-- [x] Add tiered compilation: interpreter → baseline JIT → optimized JIT
-- [x] Build AOT compilation mode - compile Java to native object files (.o) via cranelift-object
-- [x] Add LLVM IR backend - export JVM bytecode as LLVM IR for further optimization
-
-### Web & Cross-Platform
-- [x] Add WebAssembly backend - compile JVM bytecode to WASM for browser execution
-
-## Memory Management
-
-### Garbage Collection
-- [x] Implement generational GC (young/old generations) with parallel collection
-- [x] Implement pauseless GC using Rust's ownership for object lifecycle tracking
-
-### Allocators
-- [x] Implement arena-based allocators for better cache locality and fragmentation
-
-## Rust-Specific Advantages
-
-### Embedded & Systems
-- [x] Support no_std for embedded systems and microcontroller targets
-- [x] Build C API for embedding jvmrs as a library in other applications
-
-### Interoperability
-- [x] Implement polyglot interop - allow Java and Rust code to share objects directly
-- [x] Implement async I/O integration with Rust's async ecosystem (tokio/async-std)
-- [x] Add SIMD vectorization for array operations (int[], float[], etc.)
-
-### Language Implementation
-- [x] Implement GraalVM-style Truffle API for language implementation
-
-## Developer Tools
-
-### Debugging & Profiling
-- [x] Build integrated profiler with flame graphs and hotspot detection
-- [x] Implement time-travel debugging - record and replay execution history
-- [ ] Add hot code reloading - replace methods at runtime without restart
-
-### Advanced Programming Models
-- [ ] Add proxy-based AOP (Aspect-Oriented Programming) support at runtime
-
-## Security & Safety
-
-### Runtime Protection
-- [x] Create security instrumentation - detect vulnerabilities at runtime
-- [x] Implement memory access sanitizer - detect buffer overflows and use-after-free
-- [ ] Add zero-knowledge proof support for confidential computing
-
-### Deterministic Systems
-- [x] Add deterministic execution mode for real-time and safety-critical systems
-
-## Cloud & Distributed
-
-### Orchestration
-- [ ] Create Kubernetes operator for JVM orchestration and scaling
-
-### Distributed Computing
-- [ ] Build distributed object sharing - share objects across JVM instances
-
-## Fast Startup
-
-### Class Loading Optimization
-- [x] Add fast class loading with custom binary format for instant startup
+### Low / Backlog
+- [ ] Create REPL for interactive JVM exploration
+- [ ] Add support for generics (type erasure)
+- [ ] Implement serialization/deserialization
+- [ ] Create visualization tools for JVM internals
+- [ ] Create documentation website
+- [ ] Set up fuzz testing for class file parser
+- [ ] Add hot code reloading
+- [ ] Add proxy-based AOP support
+- [ ] Create Kubernetes operator
 
 ---
 
-## Priority Recommendations (High-Impact Differentiators)
+## Future Competitive Differentiation
 
-Top items that would provide the most unique value:
+### Rust Ecosystem Integration
+- [ ] Direct Rust-Java interop without JNI overhead
+- [ ] Rust crate integration system for Java extensions
+- [ ] Compile-time Java-to-Rust binding generation
+- [ ] Rust macro system for Java class definitions
 
-1. **JIT compiler using Cranelift** - ✅ Implemented (bipush, iload, iadd, ireturn)
-2. **Polyglot interop (Java ↔ Rust)** - ✅ Implemented (interop feature)
-3. **Generational GC** - ✅ Implemented
-4. **WebAssembly backend** - ✅ Implemented (wasm feature)
-5. **no_std embedded support** - ✅ Implemented (no_std feature)
-6. **SIMD vectorization** - ✅ Implemented (simd feature)
-7. **Integrated profiler** - Essential for performance tuning ✅ Implemented
-8. **Time-travel debugging** - Powerful debugging capability ✅ Implemented
+### Next-Generation Deployment Targets
+- [ ] WASI (WebAssembly System Interface) support
+- [ ] Browser-based Java execution via WASM
+- [ ] Edge computing optimizations
+- [ ] Serverless platform optimizations
+
+### Developer Experience Advantages
+- [ ] IDE plugins for cross-language debugging
+- [ ] Hot reloading for Java/Rust hybrid development
+- [ ] Performance profiling with Rust tooling integration
+- [ ] Rust documentation system for Java APIs
+
+### Specialized Use Cases
+- [ ] Blockchain/deterministic execution mode
+- [ ] Real-time systems with guaranteed pause times
+- [ ] High-frequency trading with ultra-low latency
+- [ ] Safety-critical systems with formal verification
+
+---
+
+## Completed ✓
+
+### Core JVM
+- [x] Implement missing JVM opcodes (~60% coverage)
+- [x] Proper error handling with custom error types
+- [x] Garbage collection (mark-and-sweep, generational)
+- [x] Arrays (newarray, anewarray, iaload, iastore, etc.)
+- [x] Strings and string operations
+- [x] Class inheritance and polymorphism
+- [x] Interface support (invokeinterface)
+- [x] Class loading from classpath
+- [x] Exception handling (division by zero, array bounds)
+- [x] Native method interface
+- [x] Synchronization (monitorenter/monitorexit)
+- [x] Reflection API basics
+- [x] Logging/debugging capabilities
+- [x] Benchmark suite
+- [x] Unit tests for each module
+
+### Compilation & Backends
+- [x] JIT compilation (Cranelift)
+- [x] Tiered compilation (interpreter → JIT)
+- [x] AOT compilation (.o files)
+- [x] LLVM IR backend
+- [x] WebAssembly backend
+
+### Memory & GC
+- [x] Generational GC (young/old)
+- [x] Arena-based allocators
+
+### Embedding & Interop
+- [x] C API (FFI) for embedding
+- [x] Polyglot Java/Rust interop
+- [x] Async I/O (tokio)
+- [x] SIMD vectorization
+- [x] Truffle-style API
+- [x] no_std support
+
+### Developer Tools
+- [x] Integrated profiler (flame graphs)
+- [x] Time-travel debugging
+- [x] Security instrumentation
+- [x] Deterministic execution mode
+- [x] Fast class loading (.jvmc cache)
+
+---
+
+## Infrastructure
+
+| Task | Status |
+|------|--------|
+| CI/CD pipeline | Pending |
+| Code coverage | Pending |
+| API documentation | Pending |
+| Architecture diagrams | Pending |
+
+---
+
+## Reference
+
+See `docs/structure.md` for source code layout and module organization.

@@ -6,7 +6,7 @@
 
 use crate::class_file::{ClassFile, MethodInfo};
 use crate::jit::JitError;
-use crate::memory::{StackFrame, Value};
+use crate::memory::{StackFrame, Value as JvmValue};
 use cranelift::codegen::ir::{AbiParam, Signature};
 use cranelift::codegen::isa::CallConv;
 use cranelift::prelude::*;
@@ -24,7 +24,7 @@ pub extern "C" fn jvmrs_frame_get_local_int(frame_ptr: *mut std::ffi::c_void, in
     frame
         .locals
         .get(index as usize)
-        .map(Value::as_int)
+        .map(JvmValue::as_int)
         .unwrap_or(0)
 }
 
@@ -34,7 +34,7 @@ pub extern "C" fn jvmrs_frame_push_int(frame_ptr: *mut std::ffi::c_void, value: 
         return;
     }
     let frame = unsafe { &mut *(frame_ptr as *mut StackFrame) };
-    let _ = frame.push(Value::Int(value));
+    let _ = frame.push(JvmValue::Int(value));
 }
 
 /// Cranelift JIT backend - compiles bytecode to native code.

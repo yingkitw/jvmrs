@@ -290,6 +290,17 @@ impl fmt::Display for MemoryError {
     }
 }
 
+impl From<MemoryError> for RuntimeError {
+    fn from(err: MemoryError) -> Self {
+        match err {
+            MemoryError::InvalidMonitorState => RuntimeError::InvalidMonitorState,
+            MemoryError::IllegalMonitorState => RuntimeError::IllegalMonitorState,
+            MemoryError::InvalidReference(addr) => RuntimeError::InvalidReference(addr),
+            _ => RuntimeError::Unimplemented(err.to_string()),
+        }
+    }
+}
+
 /// Class loading errors
 #[derive(Debug)]
 pub enum ClassLoadingError {

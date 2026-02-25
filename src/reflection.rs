@@ -1,5 +1,5 @@
+use crate::class_file::ClassFile;
 use crate::memory::Value;
-use std::collections::HashMap;
 
 /// Reflection information about a field
 #[derive(Debug, Clone)]
@@ -38,11 +38,187 @@ pub struct ClassReflection {
     pub modifiers: u16,
 }
 
-/// Reflection API for runtime introspection
-pub struct ReflectionApi {
-    // Simplified implementation - in a real JVM this would hold a reference to memory
-    // For this simplified version, we use static methods
+/// Convert JVM descriptor to readable type name
+fn descriptor_to_type(descriptor: &str) -> String {
+    let desc = descriptor.trim();
+    if desc.is_empty() {
+        return "void".to_string();
+    }
+    if let Some(c) = desc.chars().next() {
+        match c {
+            'B' => return "byte".to_string(),
+            'C' => return "char".to_string(),
+            'D' => return "double".to_string(),
+            'F' => return "float".to_string(),
+            'I' => return "int".to_string(),
+            'J' => return "long".to_string(),
+            'S' => return "short".to_string(),
+            'Z' => return "boolean".to_string(),
+            'V' => return "void".to_string(),
+            'L' => {
+                if let Some(semi) = desc.find(';') {
+                    return desc[1..semi].replace('/', ".");
+                }
+            }
+            '[' => {
+                if desc.len() > 1 {
+                    return format!("[{}]", descriptor_to_type(&desc[1..]));
+                }
+            }
+            _ => {}
+        }
+    }
+    descriptor.to_string()
 }
+
+/// Convert ClassFile to ClassReflection (for use with loaded classes)
+pub fn class_to_reflection(class: &ClassFile) -> ClassReflection {
+    let fields = class
+        .fields
+        .iter()
+        .map(|f| FieldReflection {
+            name: class.get_string(f.name_index).unwrap_or_default(),
+            field_type: descriptor_to_type(
+                &class.get_string(f.descriptor_index).unwrap_or_default(),
+            ),
+            modifiers: f.access_flags,
+            value: None,
+        })
+        .collect();
+
+    let methods = class
+        .methods
+        .iter()
+        .filter(|m| {
+            let name = class.get_string(m.name_index).unwrap_or_default();
+            name != "<init>" && name != "<clinit>"
+        })
+        .map(|m| {
+            let desc = class.get_string(m.descriptor_index).unwrap_or_default();
+            let params = parse_method_params(&desc);
+            let return_type = parse_return_type(&desc);
+            MethodReflection {
+                name: class.get_string(m.name_index).unwrap_or_default(),
+                parameter_types: params,
+                return_type,
+                modifiers: m.access_flags,
+            }
+        })
+        .collect();
+
+    let constructors = class
+        .methods
+        .iter()
+        .filter(|m| class.get_string(m.name_index).as_deref() == Some("<init>"))
+        .map(|m| {
+            let desc = class.get_string(m.descriptor_index).unwrap_or_default();
+            ConstructorReflection {
+                parameter_types: parse_method_params(&desc),
+                modifiers: m.access_flags,
+            }
+        })
+        .collect();
+
+    let interfaces = class
+        .interfaces
+        .iter()
+        .filter_map(|i| class.get_string(*i))
+        .collect();
+
+    ClassReflection {
+        name: class.get_class_name().unwrap_or_default(),
+        fields,
+        methods,
+        constructors,
+        super_class: class.get_super_class_name(),
+        interfaces,
+        modifiers: class.access_flags,
+    }
+}
+
+fn parse_method_params(descriptor: &str) -> Vec<String> {
+    let mut params = Vec::new();
+    if let Some(start) = descriptor.find('(') {
+        let rest = &descriptor[start + 1..];
+        if let Some(end) = rest.find(')') {
+            let params_str = &rest[..end];
+            let mut i = 0;
+            let chars: Vec<char> = params_str.chars().collect();
+            while i < chars.len() {
+                match chars[i] {
+                    'B' => {
+                        params.push("byte".to_string());
+                        i += 1;
+                    }
+                    'C' => {
+                        params.push("char".to_string());
+                        i += 1;
+                    }
+                    'D' => {
+                        params.push("double".to_string());
+                        i += 1;
+                    }
+                    'F' => {
+                        params.push("float".to_string());
+                        i += 1;
+                    }
+                    'I' => {
+                        params.push("int".to_string());
+                        i += 1;
+                    }
+                    'J' => {
+                        params.push("long".to_string());
+                        i += 1;
+                    }
+                    'S' => {
+                        params.push("short".to_string());
+                        i += 1;
+                    }
+                    'Z' => {
+                        params.push("boolean".to_string());
+                        i += 1;
+                    }
+                    'L' => {
+                        let mut j = i + 1;
+                        while j < chars.len() && chars[j] != ';' {
+                            j += 1;
+                        }
+                        let s: String = chars[i + 1..j].iter().collect();
+                        params.push(s.replace('/', "."));
+                        i = j + 1;
+                    }
+                    '[' => {
+                        let mut depth = 1;
+                        let mut j = i + 1;
+                        while j < chars.len() && depth > 0 {
+                            if chars[j] == '[' {
+                                depth += 1;
+                            } else if chars[j] == ']' {
+                                depth -= 1;
+                            }
+                            j += 1;
+                        }
+                        params.push(chars[i..j].iter().collect::<String>());
+                        i = j;
+                    }
+                    _ => i += 1,
+                }
+            }
+        }
+    }
+    params
+}
+
+fn parse_return_type(descriptor: &str) -> String {
+    if let Some(p) = descriptor.rfind(')') {
+        descriptor_to_type(&descriptor[p + 1..])
+    } else {
+        "void".to_string()
+    }
+}
+
+/// Reflection API for runtime introspection
+pub struct ReflectionApi {}
 
 impl ReflectionApi {
     /// Create a new reflection API instance
@@ -50,10 +226,10 @@ impl ReflectionApi {
         Self {}
     }
 
-    /// Get class information for a given class name
+    /// Get class information for a given class name.
+    /// Returns placeholder data for unloaded classes. For loaded classes,
+    /// use `Interpreter::get_class_reflection` instead.
     pub fn get_class(&self, class_name: &str) -> Option<ClassReflection> {
-        // This is a simplified implementation
-        // In a real JVM, this would search through the loaded classes
         Some(ClassReflection {
             name: class_name.to_string(),
             fields: Vec::new(),

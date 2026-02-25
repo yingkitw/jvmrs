@@ -1,24 +1,33 @@
-mod allocator;
-mod aop;
-mod aot_compiler;
-mod class_cache;
+// Core
 mod class_file;
+mod class_cache;
 mod class_loader;
-mod cloud;
-mod cranelift_jit;
-mod debug;
-mod deterministic;
-mod error;
-mod hot_reload;
-mod profiler;
-mod security;
-mod trace;
-mod gc;
-mod interpreter;
-mod jit;
 mod memory;
+mod allocator;
+mod gc;
+mod error;
+
+// Execution
+mod interpreter;
 mod native;
 mod reflection;
+
+// Compilation
+mod jit;
+mod cranelift_jit;
+mod aot_compiler;
+
+// Tools
+mod debug;
+mod profiler;
+mod trace;
+mod deterministic;
+
+// Optional
+mod security;
+mod aop;
+mod cloud;
+mod hot_reload;
 
 #[cfg(feature = "ffi")]
 mod ffi;
@@ -63,11 +72,14 @@ fn print_usage(program_name: &str) {
     eprintln!("  --deterministic       Enable deterministic execution (fixed RNG, timestamps)");
     eprintln!("  --sanitizer           Enable security instrumentation (bounds/null checks)");
     eprintln!("  --llvm                Emit LLVM IR to stdout");
+    eprintln!("  --verbose, -v         Enable verbose logging (instruction/method trace)");
     eprintln!("  --help, -h            Print this help message");
     eprintln!();
     eprintln!("ENVIRONMENT VARIABLES:");
     eprintln!("  JVMRS_DEBUG           Enable debug logging");
     eprintln!("  JVMRS_TRACE           Enable trace logging");
+    eprintln!("  JVMRS_TRACE_INSTRUCTIONS  Log each bytecode instruction");
+    eprintln!("  JVMRS_TRACE_MEMORY    Log memory allocations and accesses");
     eprintln!();
     eprintln!("EXAMPLES:");
     eprintln!("  {} HelloWorld", program_name);
@@ -77,16 +89,6 @@ fn print_usage(program_name: &str) {
 }
 
 fn main() {
-    // Initialize logging
-    let log_level = if env::var("JVMRS_DEBUG").is_ok() {
-        log::LevelFilter::Debug
-    } else if env::var("JVMRS_TRACE").is_ok() {
-        log::LevelFilter::Trace
-    } else {
-        log::LevelFilter::Info
-    };
-    init_logging(log_level);
-
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
@@ -106,6 +108,7 @@ fn main() {
     let mut class_cache_dir: Option<String> = None;
     let mut enable_deterministic = false;
     let mut enable_sanitizer = false;
+    let mut verbose = false;
     let mut class_name: Option<String> = None;
 
     let mut i = 1;
@@ -180,6 +183,10 @@ fn main() {
                 enable_sanitizer = true;
                 i += 1;
             }
+            "--verbose" | "-v" => {
+                verbose = true;
+                i += 1;
+            }
             "--help" | "-h" => {
                 print_usage(&args[0]);
                 process::exit(0);
@@ -194,6 +201,20 @@ fn main() {
                 i += 1;
             }
         }
+    }
+
+    // Initialize logging (after parsing --verbose)
+    let log_level = if env::var("JVMRS_DEBUG").is_ok() {
+        log::LevelFilter::Debug
+    } else if env::var("JVMRS_TRACE").is_ok() || verbose {
+        log::LevelFilter::Trace
+    } else {
+        log::LevelFilter::Info
+    };
+    init_logging(log_level);
+    if verbose {
+        std::env::set_var("JVMRS_TRACE_INSTRUCTIONS", "1");
+        std::env::set_var("JVMRS_TRACE_METHODS", "1");
     }
 
     let class_name = match class_name {

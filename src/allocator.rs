@@ -190,12 +190,16 @@ impl ArrayArena {
 
     pub fn get_array(&self, addr: u32) -> Option<&HeapArray> {
         let idx = (addr - 1) as usize;
-        self.slots.get(idx).and_then(|s| s.as_ref())
+        self.slots
+            .get(idx)
+            .and_then(|s: &Option<HeapArray>| s.as_ref())
     }
 
     pub fn get_array_mut(&mut self, addr: u32) -> Option<&mut HeapArray> {
         let idx = (addr - 1) as usize;
-        self.slots.get_mut(idx).and_then(|s| s.as_mut())
+        self.slots
+            .get_mut(idx)
+            .and_then(|s: &mut Option<HeapArray>| s.as_mut())
     }
 
     pub fn free_slot(&mut self, addr: u32) {
@@ -207,13 +211,19 @@ impl ArrayArena {
     }
 
     pub fn iter_arrays(&self) -> impl Iterator<Item = (u32, &HeapArray)> {
-        self.slots.iter().enumerate().filter_map(|(i, slot)| {
-            slot.as_ref().map(|arr| ((i + 1) as u32, arr))
-        })
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(i, slot): (usize, &Option<HeapArray>)| {
+                slot.as_ref().map(|arr| ((i + 1) as u32, arr))
+            })
     }
 
     pub fn array_count(&self) -> usize {
-        self.slots.iter().filter(|s| s.is_some()).count()
+        self.slots
+            .iter()
+            .filter(|s| s.is_some())
+            .count()
     }
 }
 

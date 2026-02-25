@@ -1,7 +1,56 @@
 # Architecture - JVMRS
 
+## Source Code Organization
+
+Modules are grouped logically in `src/lib.rs`:
+
+| Group | Modules | Purpose |
+|-------|---------|---------|
+| **Core** | class_file, class_loader, class_cache, memory, allocator, gc | Class loading, heap, GC |
+| **Execution** | interpreter, native, reflection | Bytecode execution, native methods |
+| **Compilation** | jit, cranelift_jit, aot_compiler, wasm_backend | JIT, AOT, WASM |
+| **Tools** | debug, profiler, trace, deterministic | Debugging, profiling |
+| **Optional** | ffi, interop, async_io, simd, truffle, security | Feature-gated extensions |
+
+See `docs/structure.md` for the full directory layout and module dependencies.
+
+---
+
 ## Overview
 JVMRS is a simplified Java Virtual Machine implementation written in Rust. The architecture follows a modular design with clear separation of concerns between class file parsing, memory management, and instruction interpretation.
+
+## Differentiation from Other JVM Implementations
+
+### Language and Memory Safety
+- **Rust-based Implementation**: Unlike HotSpot (C++) or OpenJ9 (C++), JVMRS leverages Rust's ownership system for memory safety without garbage collection in the VM code itself
+- **Compile-time Safety Guarantees**: Eliminates entire classes of bugs common in C++ JVM implementations (use-after-free, data races, buffer overflows)
+- **No Need for VM-level Memory Safeguards**: The VM code is memory-safe by construction, reducing the attack surface compared to traditional JVMs
+
+### Compilation and Backend Architecture
+- **Multi-Backend Compilation**: Native support for multiple compilation targets (x86, WebAssembly, AOT object files) from a single codebase
+- **Cranelift-based JIT**: Uses a modern, Rust-native code generator instead of the C2/C1 compilers in HotSpot
+- **WebAssembly Native Target**: First-class WASM support for browser and edge deployment scenarios
+
+### Modularity and Feature Gating
+- **Fine-Grained Feature Flags**: Components like JIT, FFI, async I/O, and SIMD can be selectively compiled
+- **Embedded/No-STD Support**: Can run on resource-constrained platforms where traditional JVMs cannot
+- **Polyglot Integration**: Built-in support for cross-language interoperability beyond standard JNI
+
+### Memory Management Innovations
+- **Arena-Based Allocators**: Improves cache locality and reduces fragmentation compared to traditional heap management
+- **Generational GC with Rust Roots**: Uses Rust's ownership system for efficient root set tracking
+- **Parallel GC Sweep**: Utilizes rayon for parallel garbage collection operations
+
+### Tooling and Observability
+- **Deterministic Execution Mode**: Enables reproducible execution for testing and debugging
+- **Time-Travel Debugging**: Built-in support for historical debugging not available in standard JVMs
+- **Integrated Profiling**: Native profiling capabilities without external tools
+- **Security Instrumentation**: Built-in security monitoring and analysis capabilities
+
+### Developer Experience
+- **Cargo Integration**: Leverages Rust's ecosystem for testing, benchmarking, and dependency management
+- **API-First Design**: Clean separation between library and binary components
+- **Native FFI Layer**: Designed from the ground up for easy embedding in Rust applications
 
 ## System Architecture
 
@@ -258,7 +307,7 @@ JVMRS is a simplified Java Virtual Machine implementation written in Rust. The a
 - Object creation and manipulation
 - Array operations
 - Exception handling
-- Synchronization
+- ~~Synchronization~~ (monitorenter/monitorexit implemented)
 - Type checking
 
 ## Performance Considerations
