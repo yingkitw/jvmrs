@@ -7,7 +7,10 @@ use crate::class_file::{ClassFile, MethodInfo};
 #[cfg(feature = "wasm")]
 use crate::jit::JitError;
 #[cfg(feature = "wasm")]
-use wasm_encoder::{CodeSection, Function, FunctionSection, Instruction, Module, TypeSection, ValType};
+use wasm_encoder::{
+    CodeSection, ExportKind, ExportSection, Function, FunctionSection, Instruction, Module,
+    TypeSection, ValType,
+};
 
 /// WASM module generator
 #[cfg(feature = "wasm")]
@@ -110,6 +113,13 @@ impl WasmGenerator {
             func_section.function(i as u32);
         }
         module.section(&func_section);
+
+        // Export section - export first function as "main" for browser
+        if !self.funcs.is_empty() {
+            let mut export_section = ExportSection::new();
+            export_section.export("main", ExportKind::Func, 0);
+            module.section(&export_section);
+        }
 
         // Code section
         let mut code_section = CodeSection::new();

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JVMRS - Java via WebAssembly in the Browser</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { color: #333; }
+    #output { background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 6px; min-height: 100px; font-family: monospace; white-space: pre-wrap; }
+    button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; margin-right: 0.5rem; }
+    .info { color: #666; font-size: 0.9rem; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>JVMRS - Browser Execution</h1>
+  <p>Java bytecode compiled to WebAssembly runs directly in the browser—no JVM download, sandboxed execution.</p>
+  <button id="runBtn">Run WASM</button>
+  <div id="output">Loading...</div>
+  <p class="info">
+    To use: compile a class with <code>cargo build --features wasm</code>, then run the wasm export tool to generate <code>app.wasm</code>.
+    Place it in this directory and load this page (use a local server: <code>python -m http.server</code>).
+  </p>
+
+  <script>
+    const output = document.getElementById('output');
+    const runBtn = document.getElementById('runBtn');
+
+    function log(msg) {
+      output.textContent += msg + '\n';
+    }
+
+    function clearLog() {
+      output.textContent = '';
+    }
+
+    async function loadAndRun() {
+      clearLog();
+      try {
+        log('Fetching app.wasm...');
+        const response = await fetch('app.wasm');
+        if (!response.ok) throw new Error('app.wasm not found. Build with: cargo build --features wasm');
+        const bytes = await response.arrayBuffer();
+        log('Instantiating WebAssembly module...');
+        const { instance } = await WebAssembly.instantiate(bytes);
+        log('WASM module loaded.');
+        const main = instance.exports.main;
+        if (main) {
+          log('Invoking main()...');
+          const result = main(0, 0, 0, 0);
+          log('Result: ' + result);
+        } else {
+          log('No "main" export. Ensure class was compiled with --features wasm.');
+        }
+      } catch (e) {
+        log('Error: ' + e.message);
+      }
+    }
+
+    runBtn.addEventListener('click', loadAndRun);
+    loadAndRun();
+  </script>
+</body>
+</html>

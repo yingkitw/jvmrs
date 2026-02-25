@@ -1,6 +1,10 @@
-# JVMRS - A JVM Implementation in Rust
+# JVMRS
 
-A Java Virtual Machine implementation written in Rust, featuring Cranelift JIT, AOT to native object files, generational GC, and multiple compilation backends.
+[![Crates.io](https://img.shields.io/crates/v/jvmrs.svg)](https://crates.io/crates/jvmrs)
+[![Documentation](https://docs.rs/jvmrs/badge.svg)](https://docs.rs/jvmrs)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
+
+A Java Virtual Machine implementation in Rust, featuring Cranelift JIT, AOT to native object files, generational GC, and multiple compilation backends.
 
 ## Why JVMRS?
 
@@ -22,9 +26,29 @@ Compared to HotSpot, OpenJ9, and GraalVM, jvmrs differentiates with **Rust-nativ
 
 ---
 
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+jvmrs = "0.1"
+```
+
+For optional features (LLVM IR, WebAssembly, etc.):
+
+```toml
+[dependencies]
+jvmrs = { version = "0.1", features = ["wasm"] }
+```
+
 ## Quick Start
 
 ```bash
+# Clone and run
+git clone https://github.com/jvmrs/jvmrs
+cd jvmrs
+
 # Compile example Java
 javac examples/HelloWorld.java
 
@@ -180,6 +204,11 @@ cargo test
 
 ## Documentation
 
+- [API Documentation](https://docs.rs/jvmrs)
 - `ARCHITECTURE.md` – Design and components
-- `SPEC.md` – Technical specification
+- `spec.md` – Technical specification
 - `TODO.md` – Roadmap
+
+## License
+
+Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your option.

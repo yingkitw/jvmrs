@@ -5,6 +5,15 @@ use crate::class_file::ClassFile;
 use crate::error::{to_class_loading_error, ClassLoadingError, JvmError};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
+
+/// Class load metrics for profiling
+#[derive(Debug, Clone, Default)]
+pub struct ClassLoadMetrics {
+    pub load_count: u64,
+    pub parse_time_us: u64,
+    pub cache_hits: u64,
+}
 
 /// Class loader that searches for classes in a classpath
 pub struct ClassLoader {
@@ -14,6 +23,8 @@ pub struct ClassLoader {
     classpath: Vec<PathBuf>,
     /// Optional cache directory for fast binary format (.jvmc) - skip classpath search
     cache_dir: Option<PathBuf>,
+    /// Load metrics (when profiling enabled)
+    metrics: ClassLoadMetrics,
 }
 
 impl ClassLoader {
@@ -23,6 +34,7 @@ impl ClassLoader {
             classes: HashMap::new(),
             classpath,
             cache_dir: None,
+            metrics: ClassLoadMetrics::default(),
         }
     }
 
@@ -32,7 +44,13 @@ impl ClassLoader {
             classes: HashMap::new(),
             classpath: vec![PathBuf::from(".")],
             cache_dir: None,
+            metrics: ClassLoadMetrics::default(),
         }
+    }
+
+    /// Get load metrics
+    pub fn metrics(&self) -> &ClassLoadMetrics {
+        &self.metrics
     }
 
     /// Enable fast class loading from binary cache directory
@@ -56,6 +74,7 @@ impl ClassLoader {
         // Try fast path: load from binary cache if enabled
         if let Some(ref cache_dir) = self.cache_dir {
             if let Ok(Some(class_file)) = read_from_cache(cache_dir, class_name) {
+                self.metrics.cache_hits += 1;
                 let actual_class_name = class_file
                     .get_class_name()
                     .unwrap_or_else(|| class_name.to_string());
@@ -88,8 +107,11 @@ impl ClassLoader {
                         e
                     )))
                 })?;
+                let t0 = Instant::now();
                 match ClassFile::parse(&bytes) {
                     Ok(class_file) => {
+                        self.metrics.load_count += 1;
+                        self.metrics.parse_time_us += t0.elapsed().as_micros() as u64;
                         let actual_class_name = class_file
                             .get_class_name()
                             .unwrap_or_else(|| class_name.to_string());
@@ -163,6 +185,12 @@ impl ClassLoader {
     /// Clear the class cache
     pub fn clear_cache(&mut self) {
         self.classes.clear();
+    }
+
+    /// Reload a class from disk (hot reload)
+    pub fn reload_class(&mut self, class_name: &str) -> Result<(), JvmError> {
+        self.classes.remove(class_name);
+        self.load_class(class_name)
     }
 }
 

@@ -33,6 +33,11 @@ pub fn unregister_rust_callback(name: &str) -> bool {
     rust_callbacks().write().unwrap().remove(name).is_some()
 }
 
+/// Check if a callback is registered (avoids stack manipulation when not found)
+pub fn has_rust_callback(name: &str) -> bool {
+    rust_callbacks().read().unwrap().contains_key(name)
+}
+
 /// Invoke a registered Rust callback (called from native method dispatcher)
 pub fn invoke_rust_callback(name: &str, args: &[Value]) -> Result<Value, String> {
     let callbacks = rust_callbacks().read().unwrap();

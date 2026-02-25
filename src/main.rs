@@ -11,6 +11,10 @@ mod error;
 mod interpreter;
 mod native;
 mod reflection;
+mod jni;
+mod annotations;
+mod serialization;
+mod visualization;
 
 // Compilation
 mod jit;
@@ -28,6 +32,7 @@ mod security;
 mod aop;
 mod cloud;
 mod hot_reload;
+mod extensions;
 
 #[cfg(feature = "ffi")]
 mod ffi;
@@ -39,6 +44,8 @@ mod async_io;
 mod simd;
 #[cfg(feature = "truffle")]
 mod truffle;
+#[cfg(feature = "wasm")]
+mod wasm_backend;
 
 #[cfg(test)]
 mod tests;
@@ -167,7 +174,9 @@ fn print_usage(program_name: &str) {
     eprintln!("  --deterministic       Enable deterministic execution (fixed RNG, timestamps)");
     eprintln!("  --sanitizer           Enable security instrumentation (bounds/null checks)");
     eprintln!("  --llvm                Emit LLVM IR to stdout");
+    eprintln!("  --wasm <output>       Emit WebAssembly (requires --features wasm)");
     eprintln!("  --repl                Interactive REPL for JVM exploration");
+    eprintln!("  --dump                 Dump memory/stack visualization after execution");
     eprintln!("  --verbose, -v         Enable verbose logging (instruction/method trace)");
     eprintln!("  --help, -h            Print this help message");
     eprintln!();
@@ -197,6 +206,7 @@ fn main() {
     let mut disable_jit = false;
     let mut jit_threshold: Option<u64> = None;
     let mut generate_llvm = false;
+    let mut wasm_output: Option<String> = None;
     let mut enable_profile = false;
     let mut profile_output: Option<String> = None;
     let mut enable_trace = false;
@@ -206,6 +216,7 @@ fn main() {
     let mut enable_sanitizer = false;
     let mut verbose = false;
     let mut enable_repl = false;
+    let mut enable_dump = false;
     let mut class_name: Option<String> = None;
 
     let mut i = 1;
@@ -236,6 +247,15 @@ fn main() {
             "--llvm" => {
                 generate_llvm = true;
                 i += 1;
+            }
+            "--wasm" => {
+                if i + 1 < args.len() {
+                    wasm_output = Some(args[i + 1].clone());
+                    i += 2;
+                } else {
+                    eprintln!("Error: --wasm requires an output path");
+                    process::exit(1);
+                }
             }
             "--profile" => {
                 enable_profile = true;
@@ -284,6 +304,10 @@ fn main() {
                 enable_repl = true;
                 i += 1;
             }
+            "--dump" => {
+                enable_dump = true;
+                i += 1;
+            }
             "--verbose" | "-v" => {
                 verbose = true;
                 i += 1;
@@ -314,8 +338,10 @@ fn main() {
     };
     init_logging(log_level);
     if verbose {
-        std::env::set_var("JVMRS_TRACE_INSTRUCTIONS", "1");
-        std::env::set_var("JVMRS_TRACE_METHODS", "1");
+        unsafe {
+            std::env::set_var("JVMRS_TRACE_INSTRUCTIONS", "1");
+            std::env::set_var("JVMRS_TRACE_METHODS", "1");
+        }
     }
 
     let class_name = class_name;
@@ -438,6 +464,49 @@ fn main() {
         }
     }
 
+    // WebAssembly emission mode
+    if let Some(ref output_path) = wasm_output {
+        #[cfg(feature = "wasm")]
+        {
+            use wasm_backend::WasmGenerator;
+            info!("WASM emission: compiling '{}' to '{}'", class_name_without_ext, output_path);
+
+            let mut loader = class_loader::ClassLoader::new_default();
+            if let Err(e) = loader.load_class(class_name_without_ext) {
+                eprintln!("Error loading class '{}': {}", class_name_without_ext, e);
+                process::exit(1);
+            }
+
+            let class_file = match loader.get_class(class_name_without_ext) {
+                Some(class) => class,
+                None => {
+                    eprintln!("Error: class not found");
+                    process::exit(1);
+                }
+            };
+
+            let mut wasm_gen = WasmGenerator::new();
+            for method in &class_file.methods {
+                let _ = wasm_gen.method_to_wasm(class_file, method);
+            }
+            match wasm_gen.write_to_file(Path::new(output_path)) {
+                Ok(_) => println!("WASM written to {}", output_path),
+                Err(e) => {
+                    eprintln!("Error writing WASM: {}", e);
+                    process::exit(1);
+                }
+            }
+            return;
+        }
+
+        #[cfg(not(feature = "wasm"))]
+        {
+            eprintln!("Error: wasm feature is not enabled");
+            eprintln!("Please rebuild with: cargo build --features wasm");
+            process::exit(1);
+        }
+    }
+
     // Normal execution mode
     let mut interpreter = Interpreter::new();
 
@@ -487,7 +556,14 @@ fn main() {
     }
 
     // Run the main method
-    if let Err(e) = interpreter.run_main(class_name_without_ext) {
+    let run_result = interpreter.run_main(class_name_without_ext);
+
+    // Memory/stack dump if enabled (also on error for debugging)
+    if enable_dump {
+        println!("\n{}", visualization::memory_dump_ascii(interpreter.memory()));
+    }
+
+    if let Err(e) = run_result {
         eprintln!("Error running main method: {}", e);
         process::exit(1);
     }

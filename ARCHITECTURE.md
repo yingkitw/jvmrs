@@ -7,9 +7,10 @@ Modules are grouped logically in `src/lib.rs`:
 | Group | Modules | Purpose |
 |-------|---------|---------|
 | **Core** | class_file, class_loader, class_cache, memory, allocator, gc | Class loading, heap, GC |
-| **Execution** | interpreter, native, reflection | Bytecode execution, native methods |
+| **Execution** | interpreter, native, reflection, jni, annotations | Bytecode execution, native methods, JNI, annotations |
 | **Compilation** | jit, cranelift_jit, aot_compiler, wasm_backend | JIT, AOT, WASM |
-| **Tools** | debug, profiler, trace, deterministic | Debugging, profiling |
+| **Tools** | debug, profiler, trace, deterministic, visualization | Debugging, profiling, visualization |
+| **Extensions** | extensions, aop, hot_reload, serialization | Plugins, AOP, hot reload |
 | **Optional** | ffi, interop, async_io, simd, truffle, security | Feature-gated extensions |
 
 See `docs/structure.md` for the full directory layout and module dependencies.
@@ -214,6 +215,46 @@ JVMRS is a simplified Java Virtual Machine implementation written in Rust. The a
 **Key Structures**:
 - `WasmGenerator`: Translates bytecode to WASM instructions
 
+### 3k. JNI Module (`src/jni.rs`)
+**Purpose**: Java Native Interface for registering and invoking native methods
+
+**Key Structures**:
+- `JNIEnv`: JNI environment, `jobject`, `jclass` handles
+- `register_natives()`, `find_native()`, `unregister_natives()`: Native method registration
+
+### 3l. Annotations Module (`src/annotations.rs`)
+**Purpose**: Parse and query class file annotations (RuntimeVisibleAnnotations, RuntimeInvisibleAnnotations)
+
+**Key Structures**:
+- `Annotation`, `ElementValue`: Parsed annotation representation
+- `get_annotations()`: Retrieve annotations on class, method, field
+
+### 3m. Serialization Module (`src/serialization.rs`)
+**Purpose**: Object serialization/deserialization stubs for persistence
+
+**Key Functions**:
+- `serialize_object`, `deserialize_object`: Placeholder APIs for future Java serialization protocol
+
+### 3n. Visualization Module (`src/visualization.rs`)
+**Purpose**: Debug/observability tools for heap and stack
+
+**Key Functions**:
+- `heap_dump_ascii()`, `memory_dump_ascii()`: ASCII dumps of heap and full memory
+- `frame_dump_ascii()`: Per-frame dump of locals and operand stack
+- `export_html_fragment()`: HTML export for web-based inspection
+
+### 3o. Extensions Module (`src/extensions.rs`)
+**Purpose**: Plugin system for custom Java capabilities
+
+**Key Structures**:
+- `JavaExtension` trait, `ExtensionRegistry`: Register and invoke extensions
+
+### 3p. AOP Module (`src/aop.rs`)
+**Purpose**: Aspect-oriented proxy creation for cross-cutting concerns
+
+**Key Structures**:
+- `Proxy`, `create_proxy()`: Dynamic proxy creation
+
 ### 4. Interpreter Module (`src/interpreter.rs`)
 **Purpose**: Execute Java bytecode instructions
 
@@ -297,11 +338,16 @@ JVMRS is a simplified Java Virtual Machine implementation written in Rust. The a
 ## Instruction Set Architecture
 
 ### Current Support
-- Arithmetic operations (iadd, isub, imul, etc.)
-- Control flow (goto, if_icmp, etc.)
-- Stack manipulation (dup, swap, pop)
-- Local variable access (iload, istore)
-- Method invocation (invokestatic, invokevirtual)
+- **Constants**: iconst, bipush, sipush, ldc, ldc_w, ldc2_w
+- **Loads/Stores**: iload, iload_0..3, istore, istore_0..3, aload, aload_0..3, astore, astore_0..3
+- **Arithmetic**: iadd, isub, imul, idiv, irem
+- **Stack**: dup, dup_x1, pop, swap, iinc
+- **Control**: ifeq, ifne, iflt, ifge, ifgt, ifle, if_icmpeq..le, goto, return
+- **Fields**: getstatic, putstatic, getfield, putfield
+- **Objects**: new, invokespecial
+- **Arrays**: newarray, anewarray, arraylength, iaload, iastore, aaload, aastore
+- **Sync**: monitorenter, monitorexit
+- **Invocation**: invokevirtual, invokestatic, invokespecial, invokedynamic
 
 ### Planned Extensions
 - Object creation and manipulation

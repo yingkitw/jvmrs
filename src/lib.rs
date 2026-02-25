@@ -49,6 +49,10 @@ pub mod gc;
 pub mod interpreter;
 pub mod native;
 pub mod reflection;
+pub mod jni;
+pub mod annotations;
+pub mod serialization;
+pub mod visualization;
 
 // Compilation
 pub mod jit;
@@ -66,6 +70,7 @@ pub mod security;
 pub mod aop;
 pub mod cloud;
 pub mod hot_reload;
+pub mod extensions;
 
 #[cfg(feature = "no_std")]
 pub mod core;

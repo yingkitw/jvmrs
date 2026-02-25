@@ -1,6 +1,7 @@
-//! Deterministic execution mode for real-time and safety-critical systems.
+//! Deterministic execution mode for real-time, safety-critical, and blockchain systems.
 //!
 //! When enabled: fixed RNG seed, reproducible timestamps, no non-deterministic syscalls.
+//! Used for: blockchain/smart contracts, reproducible builds, audit trails.
 
 use std::cell::Cell;
 
@@ -11,6 +12,8 @@ pub struct DeterministicConfig {
     pub rng_seed: u64,
     /// Use fixed "epoch" timestamp instead of actual time
     pub fixed_timestamp_ns: Option<u64>,
+    /// Target max pause time in ns (for real-time / HFT; advisory)
+    pub max_pause_ns: Option<u64>,
 }
 
 impl Default for DeterministicConfig {
@@ -18,7 +21,33 @@ impl Default for DeterministicConfig {
         Self {
             rng_seed: 42,
             fixed_timestamp_ns: Some(0),
+            max_pause_ns: None,
         }
+    }
+}
+
+impl DeterministicConfig {
+    /// Preset for blockchain / smart contract execution
+    pub fn blockchain() -> Self {
+        Self {
+            rng_seed: 0,
+            fixed_timestamp_ns: Some(0),
+            max_pause_ns: None,
+        }
+    }
+
+    /// Preset for real-time systems with pause time target
+    pub fn realtime(max_pause_ns: u64) -> Self {
+        Self {
+            rng_seed: 42,
+            fixed_timestamp_ns: None,
+            max_pause_ns: Some(max_pause_ns),
+        }
+    }
+
+    /// Preset for high-frequency trading (low latency target)
+    pub fn hft() -> Self {
+        Self::realtime(1_000_000) // 1ms target
     }
 }
 

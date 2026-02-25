@@ -15,7 +15,7 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module};
 
 /// FFI helpers - called from JIT-compiled code to access the stack frame.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn jvmrs_frame_get_local_int(frame_ptr: *mut std::ffi::c_void, index: u32) -> i32 {
     if frame_ptr.is_null() {
         return 0;
@@ -28,7 +28,7 @@ pub extern "C" fn jvmrs_frame_get_local_int(frame_ptr: *mut std::ffi::c_void, in
         .unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn jvmrs_frame_push_int(frame_ptr: *mut std::ffi::c_void, value: i32) {
     if frame_ptr.is_null() {
         return;

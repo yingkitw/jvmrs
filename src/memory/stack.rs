@@ -32,6 +32,11 @@ impl JVMStack {
     pub fn depth(&self) -> usize {
         self.frames.len()
     }
+
+    /// Get all frames for visualization/debugging
+    pub fn frames(&self) -> &[StackFrame] {
+        &self.frames
+    }
 }
 
 impl Default for JVMStack {

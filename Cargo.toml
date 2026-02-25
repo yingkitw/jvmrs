@@ -1,7 +1,16 @@
 [package]
 name = "jvmrs"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+description = "A JVM implementation in Rust with Cranelift JIT, AOT compilation, and WebAssembly support"
+license = "Apache-2.0"
+repository = "https://github.com/yingkitw/jvmrs"
+homepage = "https://github.com/yingkitw/jvmrs"
+documentation = "https://docs.rs/jvmrs"
+keywords = ["jvm", "java", "interpreter", "jit", "cranelift", "wasm"]
+categories = ["development-tools", "emulators", "web-programming"]
+readme = "README.md"
+exclude = ["examples/*.class"]
 
 [dependencies]
 byteorder = "1.4"

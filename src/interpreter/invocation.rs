@@ -55,6 +55,7 @@ impl Interpreter {
         &mut self,
         class_name: &str,
         method_name: &str,
+        descriptor: &str,
         is_instance: bool,
         caller_frame: &mut StackFrame,
     ) -> InterpreterResult {
@@ -76,10 +77,48 @@ impl Interpreter {
                 Err(e) => Err(JvmError::NativeError(e)),
             }
         } else {
+            #[cfg(feature = "interop")]
+            if let Ok(result) =
+                self.try_invoke_rust_callback(class_name, method_name, descriptor, is_instance, caller_frame)
+            {
+                return result;
+            }
             Err(JvmError::NativeError(NativeError::NativeMethodNotFound(
                 class_name.to_string(),
                 method_name.to_string(),
             )))
+        }
+    }
+
+    /// Invoke a registered Rust callback (interop feature). No JNI overhead.
+    #[cfg(feature = "interop")]
+    fn try_invoke_rust_callback(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        descriptor: &str,
+        is_instance: bool,
+        caller_frame: &mut StackFrame,
+    ) -> Result<InterpreterResult, ()> {
+        use crate::interop;
+        let key = format!("{}.{}", class_name.replace('/', "."), method_name);
+        if !interop::has_rust_callback(&key) {
+            return Err(());
+        }
+        let mut args = if is_instance {
+            vec![caller_frame.pop().map_err(|_| ())?]
+        } else {
+            Vec::new()
+        };
+        args.extend(self.collect_method_args(caller_frame, descriptor).map_err(|_| ())?);
+        match interop::invoke_rust_callback(&key, &args) {
+            Ok(result) => {
+                if !descriptor.ends_with(")V") {
+                    let _ = caller_frame.push(result);
+                }
+                Ok(Ok(()))
+            }
+            Err(_) => Err(()),
         }
     }
 
@@ -140,13 +179,15 @@ impl Interpreter {
         };
 
         if target_class_name == "java/io/PrintStream" && method_name == "println" {
-            if !frame.stack.is_empty() {
+            if frame.stack.len() >= 2 {
                 let value = frame.pop()?;
                 let _objectref = frame.pop()?;
                 self.native_println(value)?;
-            } else {
+            } else if !frame.stack.is_empty() {
                 let _objectref = frame.pop()?;
                 println!();
+            } else {
+                return Err(to_runtime_error_enum(RuntimeError::StackUnderflow));
             }
             return Ok(());
         }
@@ -170,6 +211,350 @@ impl Interpreter {
             target_class_name,
             method_name,
         )))
+    }
+
+    pub(crate) fn get_static(
+        &mut self,
+        class: &ClassFile,
+        frame: &mut StackFrame,
+        index: usize,
+    ) -> InterpreterResult {
+        let cp_entry = class.constant_pool.get(index).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::IllegalArgument(format!(
+                "Constant pool index {} out of bounds",
+                index
+            )))
+        })?;
+
+        let (class_index, name_and_type_index) = match cp_entry {
+            ConstantPoolEntry::ConstantFieldref {
+                class_index,
+                name_and_type_index,
+            } => (class_index, name_and_type_index),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Expected FieldRef for getstatic".to_string(),
+                )))
+            }
+        };
+
+        let class_name = match class.constant_pool.get(*class_index as usize) {
+            Some(ConstantPoolEntry::ConstantClass { name_index }) => {
+                class.get_string(*name_index).unwrap_or_default()
+            }
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Invalid class reference for getstatic".to_string(),
+                )))
+            }
+        };
+        let name_and_type = class.constant_pool.get(*name_and_type_index as usize);
+        let (field_name, _desc) = match name_and_type {
+            Some(ConstantPoolEntry::ConstantNameAndType {
+                name_index,
+                descriptor_index,
+            }) => (
+                class.get_string(*name_index).unwrap_or_default(),
+                class.get_string(*descriptor_index).unwrap_or_default(),
+            ),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Invalid NameAndType".to_string(),
+                )))
+            }
+        };
+
+        self.load_class_by_name(&class_name).ok();
+        self.ensure_system_out();
+
+        if class_name == "java/lang/System" && field_name == "out" {
+            let val = self
+                .memory
+                .get_static(&class_name, &field_name)
+                .cloned()
+                .ok_or_else(|| {
+                    to_runtime_error_enum(RuntimeError::FieldNotFound(
+                        class_name,
+                        field_name,
+                    ))
+                })?;
+            frame.push(val)?;
+            return Ok(());
+        }
+
+        let val = self
+            .memory
+            .get_static(&class_name, &field_name)
+            .cloned()
+            .ok_or_else(|| {
+                to_runtime_error_enum(RuntimeError::FieldNotFound(
+                    class_name.clone(),
+                    field_name.clone(),
+                ))
+            })?;
+        frame.push(val)?;
+        Ok(())
+    }
+
+    pub(crate) fn put_static(
+        &mut self,
+        class: &ClassFile,
+        frame: &mut StackFrame,
+        index: usize,
+    ) -> InterpreterResult {
+        let cp_entry = class.constant_pool.get(index).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::IllegalArgument(format!(
+                "Constant pool index {} out of bounds",
+                index
+            )))
+        })?;
+
+        let (class_index, name_and_type_index) = match cp_entry {
+            ConstantPoolEntry::ConstantFieldref {
+                class_index,
+                name_and_type_index,
+            } => (class_index, name_and_type_index),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Expected FieldRef for putstatic".to_string(),
+                )))
+            }
+        };
+
+        let class_name = match class.constant_pool.get(*class_index as usize) {
+            Some(ConstantPoolEntry::ConstantClass { name_index }) => {
+                class.get_string(*name_index).unwrap_or_default()
+            }
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Invalid class reference for putstatic".to_string(),
+                )))
+            }
+        };
+        let name_and_type = class.constant_pool.get(*name_and_type_index as usize);
+        let (field_name, _desc) = match name_and_type {
+            Some(ConstantPoolEntry::ConstantNameAndType {
+                name_index,
+                descriptor_index,
+            }) => (
+                class.get_string(*name_index).unwrap_or_default(),
+                class.get_string(*descriptor_index).unwrap_or_default(),
+            ),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Invalid NameAndType".to_string(),
+                )))
+            }
+        };
+
+        let val = frame.pop()?;
+        self.memory.set_static(class_name, field_name, val);
+        Ok(())
+    }
+
+    pub(crate) fn get_field(
+        &mut self,
+        class: &ClassFile,
+        frame: &mut StackFrame,
+        index: usize,
+    ) -> InterpreterResult {
+        let obj_ref = frame.pop()?.as_reference().ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::NullPointerException)
+        })?;
+        let cp_entry = class.constant_pool.get(index).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::IllegalArgument(format!(
+                "Constant pool index {} out of bounds",
+                index
+            )))
+        })?;
+        let (_class_index, name_and_type_index) = match cp_entry {
+            ConstantPoolEntry::ConstantFieldref {
+                class_index,
+                name_and_type_index,
+            } => (class_index, name_and_type_index),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Expected FieldRef".to_string(),
+                )))
+            }
+        };
+        let name_and_type = class.constant_pool.get(*name_and_type_index as usize);
+        let field_name = match name_and_type {
+            Some(ConstantPoolEntry::ConstantNameAndType { name_index, .. }) => {
+                class.get_string(*name_index).unwrap_or_default()
+            }
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Invalid NameAndType".to_string(),
+                )))
+            }
+        };
+        let val = self.memory.heap.get_field(obj_ref, &field_name).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::FieldNotFound(
+                "object".to_string(),
+                field_name.clone(),
+            ))
+        })?;
+        frame.push(val)?;
+        Ok(())
+    }
+
+    pub(crate) fn put_field(
+        &mut self,
+        class: &ClassFile,
+        frame: &mut StackFrame,
+        index: usize,
+    ) -> InterpreterResult {
+        let val = frame.pop()?;
+        let obj_ref = frame.pop()?.as_reference().ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::NullPointerException)
+        })?;
+        let cp_entry = class.constant_pool.get(index).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::IllegalArgument(format!(
+                "Constant pool index {} out of bounds",
+                index
+            )))
+        })?;
+        let (_class_index, name_and_type_index) = match cp_entry {
+            ConstantPoolEntry::ConstantFieldref {
+                class_index,
+                name_and_type_index,
+            } => (class_index, name_and_type_index),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Expected FieldRef".to_string(),
+                )))
+            }
+        };
+        let name_and_type = class.constant_pool.get(*name_and_type_index as usize);
+        let field_name = match name_and_type {
+            Some(ConstantPoolEntry::ConstantNameAndType { name_index, .. }) => {
+                class.get_string(*name_index).unwrap_or_default()
+            }
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Invalid NameAndType".to_string(),
+                )))
+            }
+        };
+        self.memory.heap.set_field(obj_ref, field_name, val).map_err(|e| {
+            to_runtime_error_enum(RuntimeError::from(e))
+        })?;
+        Ok(())
+    }
+
+    pub(crate) fn invoke_special(
+        &mut self,
+        class: &ClassFile,
+        frame: &mut StackFrame,
+        index: usize,
+    ) -> InterpreterResult {
+        let cp_entry = class.constant_pool.get(index).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::IllegalArgument(format!(
+                "Constant pool index {} out of bounds",
+                index
+            )))
+        })?;
+        let (class_index, name_and_type_index) = match cp_entry {
+            ConstantPoolEntry::ConstantMethodref {
+                class_index,
+                name_and_type_index,
+            } => (class_index, name_and_type_index),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Expected MethodRef for invokespecial".to_string(),
+                )))
+            }
+        };
+        let target_class_name = class.get_string(*class_index).unwrap_or_default();
+        let (method_name, descriptor) = match class.constant_pool.get(*name_and_type_index as usize) {
+            Some(ConstantPoolEntry::ConstantNameAndType {
+                name_index,
+                descriptor_index,
+            }) => (
+                class.get_string(*name_index).unwrap_or_default(),
+                class.get_string(*descriptor_index).unwrap_or_default(),
+            ),
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Invalid NameAndType".to_string(),
+                )))
+            }
+        };
+        self.load_class_by_name(&target_class_name).ok();
+        if let Some(class_ref) = self.class_loader.get_class(&target_class_name) {
+            if let Some(method) = class_ref.find_method(&method_name, &descriptor) {
+                let code_attr = self.find_code_attribute(class_ref, method);
+                if method_name == "<init>" && code_attr.map(|a| a.info.len()).unwrap_or(0) <= 8 {
+                    return Ok(());
+                }
+                let class_clone = class_ref.clone();
+                let method_clone = method.clone();
+                return self.execute_method(&class_clone, &method_clone, frame);
+            }
+        }
+        Err(to_runtime_error_enum(RuntimeError::MethodNotFound(
+            target_class_name,
+            method_name,
+        )))
+    }
+
+    pub(crate) fn do_new(
+        &mut self,
+        class: &ClassFile,
+        frame: &mut StackFrame,
+        index: usize,
+    ) -> InterpreterResult {
+        let cp_entry = class.constant_pool.get(index).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::IllegalArgument(format!(
+                "Constant pool index {} out of bounds",
+                index
+            )))
+        })?;
+        let class_index = match cp_entry {
+            ConstantPoolEntry::ConstantClass { name_index } => *name_index,
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Expected Class constant for new".to_string(),
+                )))
+            }
+        };
+        let class_name = class.get_string(class_index).unwrap_or_default();
+        self.load_class_by_name(&class_name).ok();
+        let addr = self.memory.heap.allocate(class_name);
+        frame.push(Value::Reference(addr))?;
+        Ok(())
+    }
+
+    pub(crate) fn do_anewarray(
+        &mut self,
+        class: &ClassFile,
+        frame: &mut StackFrame,
+        index: usize,
+    ) -> InterpreterResult {
+        let cp_entry = class.constant_pool.get(index).ok_or_else(|| {
+            to_runtime_error_enum(RuntimeError::IllegalArgument(format!(
+                "Constant pool index {} out of bounds",
+                index
+            )))
+        })?;
+        let _class_index = match cp_entry {
+            ConstantPoolEntry::ConstantClass { name_index } => *name_index,
+            _ => {
+                return Err(to_runtime_error_enum(RuntimeError::IllegalArgument(
+                    "Expected Class constant for anewarray".to_string(),
+                )))
+            }
+        };
+        let len = frame.pop()?.as_int();
+        if len < 0 {
+            return Err(to_runtime_error_enum(RuntimeError::NegativeArraySizeException(len)));
+        }
+        use crate::memory::HeapArray;
+        let arr = HeapArray::ReferenceArray(vec![0; len as usize]);
+        let addr = self.memory.heap.allocate_array(arr);
+        frame.push(Value::ArrayRef(addr))?;
+        Ok(())
     }
 
     pub(crate) fn invoke_static(
@@ -251,9 +636,13 @@ impl Interpreter {
         let class_name = class.get_class_name().unwrap_or("Unknown".to_string());
 
         if (method.access_flags & 0x0100) != 0 {
+            let descriptor = class
+                .get_string(method.descriptor_index)
+                .unwrap_or_else(|| "()V".to_string());
             return self.invoke_native_method(
                 &class_name,
                 &method_name,
+                &descriptor,
                 (method.access_flags & 0x0008) == 0,
                 caller_frame,
             );
@@ -304,7 +693,10 @@ impl Interpreter {
                 let descriptor = class
                     .get_string(method.descriptor_index)
                     .unwrap_or_default();
-                let param_count = descriptor::count_parameters(&descriptor);
+                let mut param_count = descriptor::count_parameters(&descriptor);
+                if (method.access_flags & 0x0008) == 0 {
+                    param_count += 1;
+                }
 
                 for i in 0..param_count {
                     let value = caller_frame.pop()?;
@@ -348,7 +740,10 @@ impl Interpreter {
         let descriptor = class
             .get_string(method.descriptor_index)
             .unwrap_or_default();
-        let param_count = descriptor::count_parameters(&descriptor);
+        let mut param_count = descriptor::count_parameters(&descriptor);
+        if (method.access_flags & 0x0008) == 0 {
+            param_count += 1;
+        }
 
         for i in 0..param_count {
             let value = caller_frame.pop()?;

@@ -1,6 +1,14 @@
 //! Proxy-based AOP (Aspect-Oriented Programming) support at runtime.
 //!
-//! Foundation for method interception via proxy objects.
+//! Method interception via proxy objects that wrap target instances.
+
+/// Proxy for a Java object - intercepts method calls for AOP
+#[derive(Debug, Clone)]
+pub struct Proxy {
+    pub target_class: String,
+    pub target_ref: u32,
+    pub interceptor: Option<String>,
+}
 
 /// AOP advice kind
 #[derive(Debug, Clone, Copy)]
@@ -44,6 +52,15 @@ impl AopRegistry {
             }
         }
         None
+    }
+}
+
+/// Create a proxy for an object (returns metadata for dispatch layer to intercept)
+pub fn create_proxy(target_class: String, target_ref: u32, interceptor: Option<String>) -> Proxy {
+    Proxy {
+        target_class,
+        target_ref,
+        interceptor,
     }
 }
 

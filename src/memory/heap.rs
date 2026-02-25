@@ -106,6 +106,26 @@ impl Heap {
         self.objects.get_mut(&addr)
     }
 
+    pub fn get_field(&self, addr: u32, field_name: &str) -> Option<Value> {
+        self.objects
+            .get(&addr)
+            .and_then(|obj| obj.fields.get(field_name).cloned())
+    }
+
+    pub fn set_field(
+        &mut self,
+        addr: u32,
+        field_name: String,
+        value: Value,
+    ) -> Result<(), crate::error::MemoryError> {
+        let obj = self
+            .objects
+            .get_mut(&addr)
+            .ok_or_else(|| crate::error::MemoryError::InvalidReference(addr))?;
+        obj.fields.insert(field_name, value);
+        Ok(())
+    }
+
     pub fn get_string_data(&self, addr: u32) -> Option<&String> {
         self.objects.get(&addr).and_then(|obj| {
             if obj.class_name == "java/lang/String" {

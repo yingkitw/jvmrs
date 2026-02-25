@@ -190,6 +190,11 @@ impl Interpreter {
     }
 
     /// Get trace recorder reference
+    /// Get reference to memory for visualization/debugging
+    pub fn memory(&self) -> &Memory {
+        &self.memory
+    }
+
     pub fn trace_recorder(&self) -> Option<&TraceRecorder> {
         self.trace_recorder.as_ref()
     }
@@ -285,7 +290,6 @@ impl Interpreter {
         while frame.pc < code.len() {
             let opcode = code[frame.pc];
             frame.pc += 1;
-
             self.debugger.log_instruction(&frame, &class_clone, opcode);
 
             if !self.dispatch_instruction(&class_clone, &code, &mut frame, opcode)? {
@@ -299,10 +303,17 @@ impl Interpreter {
     /// Find the Code attribute in a method
     pub(crate) fn find_code_attribute<'a>(
         &self,
-        _class: &ClassFile,
+        class: &ClassFile,
         method: &'a MethodInfo,
     ) -> Option<&'a AttributeInfo> {
-        method.attributes.iter().find(|attr| attr.info.len() >= 8)
+        method
+            .attributes
+            .iter()
+            .find(|attr| {
+                attr.info.len() >= 8
+                    && class.get_string(attr.attribute_name_index).as_deref() == Some("Code")
+            })
+            .or_else(|| method.attributes.iter().find(|attr| attr.info.len() >= 8))
     }
 }
 
